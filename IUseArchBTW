@@ -19,35 +19,21 @@ read DISK
 
 # Partition disk CAUTION WILL WIPE CONTENTS OF DISK
 echo "-- Partitioning Disk --"
-if [ "$EFI" = true ]; then
-	parted $DISK -- mklabel gpt
-	parted $DISK -- mkpart primary 512MiB -8GiB
-	parted $DISK -- mkpart primary linux-swap -8GiB 100%
-	parted $DISK -- mkpart ESP fat32 1MiB 512MiB
-	parted $DISK -- set 3 esp on
-else
-	parted $DISK -- mklabel msdos
-	parted $DISK -- mkpart primary 1MiB -8GiB
-	parted $DISK -- mkpart primary linux-swap -8GiB 100%
-fi
+parted $DISK -- mklabel msdos
+parted $DISK -- mkpart primary 1MiB -8GiB
+parted $DISK -- mkpart primary linux-swap -8GiB 100%
 
 # Create filesystem turn on swap
 echo "-- Creating Filesystem and Swap --"
 mkfs.ext4 -L arch {DISK}1
 mkswap -L swap {DISK}2
 swapon {DISK}2
-if [ "$EFI" = true ]; then
-	mkfs.fat -F 32 -n boot {DISK}3
-fi
+
 # Mount filesystem
 mount {DISK}1 /mnt
-if [ "$EFI" = true ]; then
-	mkdir -p /mnt/boot
-	mount {DISK}3 /mnt/boot
-fi
 
 # Install base packages
-pacstrap /mnt linux linux-lts linux-firmware base vim
+pacstrap /mnt linux linux-firmware base vim
 
 # Generate fstab
 genfstab -U /mnt >> /mnt/etc/fstab
