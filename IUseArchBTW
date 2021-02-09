@@ -1,0 +1,108 @@
+#!/bin/bash
+
+echo "-- Enter hostname (name of the computer) --"
+read HOSTNAME
+
+# Check which mode we are booted in will use later for install
+ls /sys/firmware/efi/efivars && EFI=true || EFI=false
+
+# Ensure clock is accurate
+timedatectl set-ntp true
+
+# Show user the disks
+echo "-- Disks available for formatting --"
+lsblk
+
+# Ask user for which drive they wish to install on
+echo "-- Enter install disk. Available disks are listed above. --"
+read DISK
+
+# Partition disk CAUTION WILL WIPE CONTENTS OF DISK
+echo "-- Partitioning Disk --"
+if [ "$EFI" = true ]; then
+	parted $DISK -- mklabel gpt
+	parted $DISK -- mkpart primary 512MiB -8GiB
+	parted $DISK -- mkpart primary linux-swap -8GiB 100%
+	parted $DISK -- mkpart ESP fat32 1MiB 512MiB
+	parted $DISK -- set 3 esp on
+else
+	parted $DISK -- mklabel msdos
+	parted $DISK -- mkpart primary 1MiB -8GiB
+	parted $DISK -- mkpart primary linux-swap -8GiB 100%
+fi
+
+# Create filesystem turn on swap
+echo "-- Creating Filesystem and Swap --"
+mkfs.ext4 -L arch {DISK}1
+mkswap -L swap {DISK}2
+swapon {DISK}2
+if [ "$EFI" = true ]; then
+	mkfs.fat -F 32 -n boot {DISK}3
+fi
+# Mount filesystem
+mount {DISK}1 /mnt
+if [ "$EFI" = true ]; then
+	mkdir -p /mnt/boot
+	mount {DISK}3 /mnt/boot
+fi
+
+# Install base packages
+pacstrap /mnt linux linux-lts linux-firmware base vim
+
+# Generate fstab
+genfstab -U /mnt >> /mnt/etc/fstab
+
+# Change root to newly created system
+echo "-- Entering New System --"
+arch-chroot
+
+# Set time zone
+ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
+
+# Generate /etc/adjtime
+hwclock --systohc
+
+# Generate locale details
+echo "-- Generating Locale Details --"
+locale-gen
+
+# Create the locale.conf(5) file, and set the LANG variable accordingly:
+touch /etc/locale.conf
+LANG=en_US.UTF-8 >> /etc/locale.conf
+
+# Set hostname (name of computer)
+$HOSTNAME >> /etc/hostname
+
+# Install necessary packages
+# I have not gotten my laptop to reboot without grub
+pacman -S grub networkmanager wpa_supplicant
+
+# Install grub
+echo "-- Installing Grub --"
+grub-install --target=i386-pc $DISK
+# Make config for grub
+grub-mkconfig -o /boot/grub/grub.cfg
+
+# Enable network manager
+systemctl enale network manager
+
+# Setup wpa_supplicant
+touch /etc/wpa_supplicant/wpa_supplicant.conf
+update_config=1 >> /etc/wpa_supplicant/wpa_supplicant.conf
+ctrl_interface=/run/wpa_supplicant >> /etc/wpa_supplicant/wpa_supplicant.conf
+# Start wpa_supplicant
+wpa_supplicant -B -i interface -c /etc/wpa_supplicant/wpa_supplicant.conf
+# Can now run wpa_cli to use wpa_supplicant
+
+# Set password for root user
+passwd
+
+# Exit newly created system and unmount for safety
+exit
+umount -R /mnt
+
+# We done
+echo "Install script is done if you want check to make sure everything is ok"
+echo "You now use Arch BTW"
+echo "Make sure to mention it in every conversation you have even if that person knows"
+echo "Reboot when ready"
