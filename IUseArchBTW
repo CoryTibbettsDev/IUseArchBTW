@@ -23,14 +23,16 @@ parted $DISK -- mklabel msdos
 parted $DISK -- mkpart primary 1MiB -8GiB
 parted $DISK -- mkpart primary linux-swap -8GiB 100%
 
+DISK1="{DISK}1"
+DISK2="{DISK}2"
+
 # Create filesystem turn on swap
 echo "-- Creating Filesystem and Swap --"
-mkfs.ext4 -L arch {DISK}1
-mkswap -L swap {DISK}2
-swapon {DISK}2
-
+mkfs.ext4 -L arch $DISK1
+mkswap -L swap $DISK2
+swapon $DISK2
 # Mount filesystem
-mount {DISK}1 /mnt
+mount $DISK1 /mnt
 
 # Install base packages
 pacstrap /mnt linux linux-firmware base vim
@@ -73,11 +75,12 @@ grub-mkconfig -o /boot/grub/grub.cfg
 systemctl enale network manager
 
 # Setup wpa_supplicant
-touch /etc/wpa_supplicant/wpa_supplicant.conf
-update_config=1 >> /etc/wpa_supplicant/wpa_supplicant.conf
-ctrl_interface=/run/wpa_supplicant >> /etc/wpa_supplicant/wpa_supplicant.conf
+SUPPCONF=/etc/wpa_supplicant/wpa_supplicant.conf
+touch $SUPPCONF
+update_config=1 >> SUFFCONF 
+ctrl_interface=/run/wpa_supplicant >> $SUPPCONF 
 # Start wpa_supplicant
-wpa_supplicant -B -i interface -c /etc/wpa_supplicant/wpa_supplicant.conf
+wpa_supplicant -B -i interface -c $SUPPCONF 
 # Can now run wpa_cli to use wpa_supplicant
 
 # Set password for root user
