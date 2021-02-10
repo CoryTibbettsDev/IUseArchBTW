@@ -2,53 +2,29 @@
 
 timestaectl set-ntp true
 
-# || Partitioning Drive ||
+echo -- Partitioning Drive --
 parted /dev/sda -- mklabel msdos --script
 parted /dev/sda -- mkpart primary 1MiB -8GiB --script
 parted /dev/sda -- mkpart primary linux-swap -8GiB 100% --script
 
-# || Making Filesysten ||
+echo -- Making Filesysten --
 mkfs.ext4 -L arch /dev/sda1
 mkswap -L swap /dev/sda2
 swapon /dev/sda2
 
-# || Mounting Filesystem ||
+echo -- Mounting Filesystem --
 mount /dev/sda1 /mnt
 
-# || Installing Kernel and Base Software ||
+echo -- Installing Kernel and Base Software --
 pacstrap /mnt linux linux-firmware base base-devel vim sudo --noconfirm --needed
 
-# || Generating fstab ||
+echo -- Generating fstab --
 genfstab -U /mnt >> /mnt/etc/fstab
 
-# || chroot ||
-pwd
-arch-chroot /mnt
-pwd
+# We cannot chroot and continue running script so we pull down new script
+# copy to the new root and then run that
+curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/master/chroot.sh > chroot.sh
+cp -v chroot.sh /mnt
 
-ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
-
-# || Hardware Clock ||
-hwclock --systohc
-
-# || Generating Locale ||
-locale-gen
-
-LANG=en_US.UTF-8 >> /etc/locale.conf
-
-# || Input Hostname ||
-vim /etc/hostname
-
-# || Installing Grub ||
-pacman -S grub
-grub-install --target=i386-pc /dev/sda
-grub-mkconfig -o /boot/grub/grub.cfg
-
-# || Installing NetworkManager ||
-pacman -S networkmanager dhclient --noconfirm --needed
-systemctl enable --now NetworkManager
-
-passwd
-
-exit
-umount -R /mnt
+echo -- chroot --
+arch-chroot /mnt ./chroot.sh
