@@ -2,35 +2,51 @@
 
 timestaectl set-ntp true
 
-parted /dev/sda -- mklabel msdos
-parted /dev/sda -- mkpart primary 1MiB -8GiB
-parted /dev/sda -- mkpart primary linux-swap -8GiB 100%
+# || Partitioning Drive ||
+parted /dev/sda -- mklabel msdos --script
+parted /dev/sda -- mkpart primary 1MiB -8GiB --script
+parted /dev/sda -- mkpart primary linux-swap -8GiB 100% --script
 
+# || Making Filesysten ||
 mkfs.ext4 -L arch /dev/sda1
 mkswap -L swap /dev/sda2
 swapon /dev/sda2
 
+# || Mounting Filesystem ||
 mount /dev/sda1 /mnt
 
-pacstrap /mnt linux linux-firmware base vim
+# || Installing Kernel and Base Software ||
+pacstrap /mnt linux linux-firmware base base-devel vim sudo --noconfirm --needed
 
+# || Generating fstab ||
 genfstab -U /mnt >> /mnt/etc/fstab
 
+# || chroot ||
+pwd
 arch-chroot /mnt
+pwd
 
 ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
 
+# || Hardware Clock ||
 hwclock --systohc
 
+# || Generating Locale ||
 locale-gen
 
 LANG=en_US.UTF-8 >> /etc/locale.conf
 
+# || Input Hostname ||
 vim /etc/hostname
 
+# || Installing Grub ||
 pacman -S grub
 grub-install --target=i386-pc /dev/sda
 grub-mkconfig -o /boot/grub/grub.cfg
+
+# || Installing NetworkManager ||
+pacman -S networkmanager dhclient --noconfirm --needed
+systemctl enable --now NetworkManager
 
 passwd
 
