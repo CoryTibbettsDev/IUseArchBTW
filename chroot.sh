@@ -22,8 +22,11 @@ grub-install --target=i386-pc /dev/sda
 grub-mkconfig -o /boot/grub/grub.cfg
 
 echo -- Installing NetworkManager --
-pacman -S networkmanager dhclient --noconfirm --needed
-systemctl enable --now NetworkManager
+pacman -S networkmanager wpa_supplicant --noconfirm --needed
+systemctl enable --now NetworkManager && echo "!!NetworkManager Working!!" || echo "!!NetworkManager not working!!"
+
+pacman -S xorg mesa lightdm xmonad xmonad-contrib xterm termite epiphany
+systemctl enable lightdm
 
 passwd
 

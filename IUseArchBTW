@@ -1,6 +1,6 @@
 #!/bin/bash
 
-timestaectl set-ntp true
+timedatectl set-ntp true
 
 echo -- Partitioning Drive --
 parted /dev/sda -- mklabel msdos --script
@@ -27,4 +27,4 @@ curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/master/chroot
 cp -v chroot.sh /mnt
 
 echo -- chroot --
-arch-chroot /mnt ./chroot.sh
+arch-chroot /mnt ./mnt/chroot.sh
