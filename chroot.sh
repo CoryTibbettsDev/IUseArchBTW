@@ -14,7 +14,7 @@ locale-gen
 LANG=en_US.UTF-8 >> /etc/locale.conf
 
 echo -- Input Hostname --
-vim /etc/hostname
+echo "arch" >>  /etc/hostname
 
 echo -- Installing Grub --
 pacman -S grub
@@ -23,11 +23,13 @@ grub-mkconfig -o /boot/grub/grub.cfg
 
 echo -- Installing NetworkManager --
 pacman -S networkmanager wpa_supplicant --noconfirm --needed
-systemctl enable --now NetworkManager && echo "!!NetworkManager Working!!" || echo "!!NetworkManager not working!!"
+systemctl enable --now NetworkManager && echo "!! NetworkManager Working !!" || echo "!! NetworkManager not working !!"
 
-pacman -S xorg mesa lightdm xmonad xmonad-contrib xterm termite epiphany
-systemctl enable lightdm
+echo "ctrl_interface=/run/wpa_supplicant" >> /etc/wpa_supplicant/wpa_supplicant.conf
+echo "update_config=1" >> /etc/wpa_supplicant/wpa_supplicant.conf
+
+pacman -S xorg mesa lightdm lightdm-gtk-greeter xmonad xmonad-contrib xterm termite epiphany
+systemctl enable lightdm && echo "!! lightdm working !!" || echo "!! lightdm not working !!"
+
 
 passwd
-
-umount -R /mnt
