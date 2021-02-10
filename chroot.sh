@@ -17,7 +17,7 @@ echo -- Input Hostname --
 echo "arch" >>  /etc/hostname
 
 echo -- Installing Grub --
-pacman -S grub
+pacman -S grub --noconfirm --needed
 grub-install --target=i386-pc /dev/sda
 grub-mkconfig -o /boot/grub/grub.cfg
 
@@ -28,8 +28,8 @@ systemctl enable --now NetworkManager && echo "!! NetworkManager Working !!" || 
 echo "ctrl_interface=/run/wpa_supplicant" >> /etc/wpa_supplicant/wpa_supplicant.conf
 echo "update_config=1" >> /etc/wpa_supplicant/wpa_supplicant.conf
 
-pacman -S xorg mesa lightdm lightdm-gtk-greeter xmonad xmonad-contrib xterm termite epiphany
-systemctl enable lightdm && echo "!! lightdm working !!" || echo "!! lightdm not working !!"
+pacman -S xorg mesa lightdm lightdm-gtk-greeter xlightdm-gtk-greeter-settings monad xmonad-contrib xterm termite epiphany
+systemctl enable lightdm.service && echo "!! lightdm working !!" || echo "!! lightdm not working !!"
 
 
 passwd

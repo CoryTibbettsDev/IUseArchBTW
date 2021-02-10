@@ -3,9 +3,9 @@
 timedatectl set-ntp true
 
 echo -- Partitioning Drive --
-parted /dev/sda -- mklabel msdos --script
-parted /dev/sda -- mkpart primary 1MiB -8GiB --script
-parted /dev/sda -- mkpart primary linux-swap -8GiB 100% --script
+parted --script /dev/sda -- mklabel msdos
+parted --script /dev/sda -- mkpart primary 1MiB -8GiB
+parted --script /dev/sda -- mkpart primary linux-swap -8GiB 100%
 
 echo -- Making Filesysten --
 mkfs.ext4 -L arch /dev/sda1
@@ -27,4 +27,4 @@ curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/master/chroot
 cp -v chroot.sh /mnt
 
 echo -- chroot --
-arch-chroot /mnt ./mnt/chroot.sh
+arch-chroot /mnt
