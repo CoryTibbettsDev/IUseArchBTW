@@ -1,22 +1,5 @@
 #!/bin/bash
 
-PKGS=(
-	linux
-	linux-firmware
-	base
-	base-devel
-	grub
-	sudo
-	vim
-	git
-	xorg
-	xorg-init
-	xmonad
-	xmonad-contrib
-	termite
-	epiphany
-)
-
 timedatectl set-ntp true
 
 echo "-- Partitioning Drive --"
