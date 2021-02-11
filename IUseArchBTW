@@ -16,7 +16,7 @@ echo "-- Mounting Filesystem --"
 mount /dev/sda1 /mnt
 
 echo "-- Installing Kernel and Base Software --"
-pacstrap /mnt linux linux-firmware base base-devel vim sudo git --noconfirm --needed
+pacstrap /mnt linux linux-firmware base base-devel vim sudo grub git --noconfirm --needed
 
 echo "-- Generating fstab --"
 genfstab -U /mnt >> /mnt/etc/fstab
@@ -36,10 +36,9 @@ locale-gen
 
 echo "LANG=en_US.UTF-8" >> /etc/locale.conf
 echo "--Input Hostname--"
-echo "arch" >>  /etc/hostname
+echo "arch" >> /etc/hostname
 
 echo "--Installing Grub--"
-pacman -S grub --noconfirm --needed
 grub-install --target=i386-pc /dev/sda
 grub-mkconfig -o /boot/grub/grub.cfg
 
@@ -50,11 +49,8 @@ systemctl enable --now NetworkManager && echo "--NetworkManager Working--" || ec
 echo "ctrl_interface=/run/wpa_supplicant" >> /etc/wpa_supplicant/wpa_supplicant.conf
 echo "update_config=1" >> /etc/wpa_supplicant/wpa_supplicant.conf
 
-echo "--Terminal Emulator--"
-pacman -S xterm
-
 echo "-- Enabling Wheel Group --"
-echo "%wheel ALL=(ALL) ALL >> /etc/sudoers
+echo "%wheel ALL=(ALL) ALL" >> /etc/sudoers
 
 useradd -mg wheel person 
 
