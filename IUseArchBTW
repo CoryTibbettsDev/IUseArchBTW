@@ -16,7 +16,7 @@ echo "-- Mounting Filesystem --"
 mount /dev/sda1 /mnt
 
 echo "-- Installing Kernel and Base Software --"
-pacstrap /mnt linux linux-firmware base base-devel vim sudo --noconfirm --needed
+pacstrap /mnt linux linux-firmware base base-devel vim sudo git --noconfirm --needed
 
 echo "-- Generating fstab --"
 genfstab -U /mnt >> /mnt/etc/fstab
@@ -35,12 +35,6 @@ echo "--Generating Locale--"
 locale-gen
 
 echo "LANG=en_US.UTF-8" >> /etc/locale.conf
-
-echo "-- Enabling Wheel Group --"
-echo "%wheel ALL=(ALL) ALL  >> /etc/sudoers
-
-useradd -m -U -g wheel person 
-
 echo "--Input Hostname--"
 echo "arch" >>  /etc/hostname
 
@@ -59,8 +53,12 @@ echo "update_config=1" >> /etc/wpa_supplicant/wpa_supplicant.conf
 echo "--Terminal Emulator--"
 pacman -S xterm
 
+echo "-- Enabling Wheel Group --"
+echo "%wheel ALL=(ALL) ALL >> /etc/sudoers
+
+useradd -mg wheel person 
+
 echo "--Getting Dotfiles--"
-pacman -S git
 cd /home/person
 git clone https://github.com/CoryTibbettsDev/.dotfiles
 cd .dotfiles
