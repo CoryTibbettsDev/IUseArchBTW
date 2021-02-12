@@ -16,7 +16,7 @@ echo "-- Mounting Filesystem --"
 mount /dev/sda1 /mnt
 
 echo "-- Installing Kernel and Base Software --"
-pacstrap /mnt linux linux-firmware base base-devel vim sudo grub git xorg xorg-xinit xmonad xmoand-contrib termite epiphany --noconfirm --needed
+pacstrap /mnt linux linux-firmware grub base base-devel sudo vim git xorg xorg-xinit xmonad xmonad-contrib termite epiphany --noconfirm --needed
 
 echo "-- Generating fstab --"
 genfstab -U /mnt >> /mnt/etc/fstab
@@ -58,6 +58,5 @@ echo "--Getting Dotfiles--"
 cd /home/person
 git clone https://github.com/CoryTibbettsDev/.dotfiles
 cd .dotfiles
-bash create_symlinks.sh
 
 EOF
