@@ -19,7 +19,7 @@ echo "-- Mounting Filesystem --"
 mount /dev/sda1 /mnt
 
 echo "-- Installing Kernel and Base Software --"
-pacstrap /mnt linux linux-firmware grub base base-devel sudo networkmanager wpa_supplicant --noconfirm --needed
+pacstrap /mnt linux linux-firmware grub base base-devel sudo vim networkmanager wpa_supplicant --noconfirm --needed
 
 echo "-- Generating fstab --"
 genfstab -U /mnt >> /mnt/etc/fstab
