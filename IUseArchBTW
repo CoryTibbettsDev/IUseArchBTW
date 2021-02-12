@@ -1,5 +1,8 @@
 #!/bin/bash
 
+USERNAME="test"
+HOSTNAME="arch"
+
 timedatectl set-ntp true
 
 echo "-- Partitioning Drive --"
@@ -16,7 +19,7 @@ echo "-- Mounting Filesystem --"
 mount /dev/sda1 /mnt
 
 echo "-- Installing Kernel and Base Software --"
-pacstrap /mnt linux linux-firmware grub base base-devel sudo vim git xorg xorg-xinit xmonad xmonad-contrib termite epiphany --noconfirm --needed
+pacstrap /mnt linux linux-firmware grub base base-devel sudo networkmanager wpa_supplicant --noconfirm --needed
 
 echo "-- Generating fstab --"
 genfstab -U /mnt >> /mnt/etc/fstab
@@ -36,14 +39,13 @@ locale-gen
 
 echo "LANG=en_US.UTF-8" >> /etc/locale.conf
 echo "--Input Hostname--"
-echo "arch" >> /etc/hostname
+echo "$HOSTNAME" >> /etc/hostname
 
 echo "--Installing Grub--"
 grub-install --target=i386-pc /dev/sda
 grub-mkconfig -o /boot/grub/grub.cfg
 
-echo "-- Installing NetworkManager --"
-pacman -S networkmanager wpa_supplicant --noconfirm --needed
+echo "--NetworkManager--"
 systemctl enable --now NetworkManager && echo "--NetworkManager Working--" || echo "--NetworkManager not working--"
 
 echo "ctrl_interface=/run/wpa_supplicant" >> /etc/wpa_supplicant/wpa_supplicant.conf
@@ -52,11 +54,6 @@ echo "update_config=1" >> /etc/wpa_supplicant/wpa_supplicant.conf
 echo "-- Enabling Wheel Group --"
 echo "%wheel ALL=(ALL) ALL" >> /etc/sudoers
 
-useradd -mg wheel person 
-
-echo "--Getting Dotfiles--"
-cd /home/person
-git clone https://github.com/CoryTibbettsDev/.dotfiles
-cd .dotfiles
+useradd -mg wheel "$USERNAME"
 
 EOF
