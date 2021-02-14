@@ -34,7 +34,7 @@ mkfs.ext4 -L arch "${DISK}1"
 mkswap -L swap "${DISK}2"
 swapon "${DISK}2"
 if [ "$EFI" = true ]; then
-	mkfs.fat -F 32 -n "UEFISYS" "${DISK}2" # (for UEFI systems only)
+	mkfs.fat -F 32 -n "UEFISYS" "${DISK}3" # (for UEFI systems only)
 fi
 mount "${DISK}1" /mnt
 if [ "$EFI" = true ]; then
