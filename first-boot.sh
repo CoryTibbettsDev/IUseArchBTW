@@ -13,6 +13,8 @@ PKGS=(
 	# Utilities
 	git
 	curl
+        # Wallpaper manager
+        nitrogen
 	# Terminal emulator
 	termite
 	# Web browser
