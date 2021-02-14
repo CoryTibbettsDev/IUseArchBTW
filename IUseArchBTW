@@ -1,22 +1,46 @@
 #!/bin/bash
 
-USERNAME="test"
-HOSTNAME="arch"
+echo "Enter Username"
+read USERNAME
+echo "Enter Hostname (Name of the Computer)"
+read HOSTNAME
+
+lsblk
+echo "Enter disk (Like: /dev/sda)"
+read DISK
 
 timedatectl set-ntp true
 
+# Check if the system is booted as UEFI or Legacy BIOS
+ls /sys/firmware/efi/efivars && EFI=true || EFI=false
+
 echo "-- Partitioning Drive --"
-parted /dev/sda -- mklabel msdos
-parted /dev/sda -- mkpart primary 1MiB -8GiB
-parted /dev/sda -- mkpart primary linux-swap -8GiB 100%
+if [ "$EFI" = true ]; then
+	parted --script "${DISK}" \
+	mklabel gpt \
+	mkpart primary 512MiB -8GiB \
+	mkpart primary linux-swap -8GiB 100% \
+	mkpart ESP fat32 1MiB 512MiB \
+	set 3 esp on
+else
+	parted --script "${DISK}" \
+	mklabel msdos \
+	mkpart primary 1MiB -8GiB \
+	mkpart primary linux-swap -8GiB 100%
+fi
 
-echo "-- Making Filesysten --"
-mkfs.ext4 -L arch /dev/sda1
-mkswap -L swap /dev/sda2
-swapon /dev/sda2
-
-echo "-- Mounting Filesystem --"
-mount /dev/sda1 /mnt
+echo "-- Making Filesysten and Swap--"
+mkfs.ext4 -L arch "${DISK}1"
+mkswap -L swap "${DISK}2"
+swapon "${DISK}2"
+if [ "$EFI" = true ]; then
+	mkfs.fat -F 32 -n "UEFISYS" "${DISK}2" # (for UEFI systems only)
+fi
+mount "${DISK}1" /mnt
+if [ "$EFI" = true ]; then
+	mkdir -p /mnt/boot # (for UEFI systems only)
+	mount "${DISK}3"/boot /mnt/boot # (for UEFI systems only)
+fi
 
 echo "-- Installing Kernel and Base Software --"
 pacstrap /mnt linux linux-firmware grub base base-devel sudo vim networkmanager wpa_supplicant --noconfirm --needed
@@ -24,7 +48,7 @@ pacstrap /mnt linux linux-firmware grub base base-devel sudo vim networkmanager 
 echo "-- Generating fstab --"
 genfstab -U /mnt >> /mnt/etc/fstab
 
-echo "--chroot--"
+echo "--Chroot--"
 # Commands executed inside /mnt
 cat << EOF | arch-chroot /mnt
 
@@ -38,8 +62,8 @@ echo "--Generating Locale--"
 locale-gen
 
 echo "LANG=en_US.UTF-8" >> /etc/locale.conf
-echo "--Input Hostname--"
-echo "$HOSTNAME" >> /etc/hostname
+echo "--Setting Hostname--"
+echo "${HOSTNAME}" >> /etc/hostname
 
 echo "--Installing Grub--"
 grub-install --target=i386-pc /dev/sda
@@ -54,6 +78,10 @@ echo "update_config=1" >> /etc/wpa_supplicant/wpa_supplicant.conf
 echo "-- Enabling Wheel Group --"
 echo "%wheel ALL=(ALL) ALL" >> /etc/sudoers
 
-useradd -mg wheel "$USERNAME"
+echo "--Creating User--"
+useradd -mg wheel "${USERNAME}"
 
 EOF
+
+echo "All Done Hopefully It Works"
+echo "Remember to arch-chroot /mnt and set passwd for root and user"

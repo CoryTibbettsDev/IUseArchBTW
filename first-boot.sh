@@ -1,13 +1,26 @@
 #!/bin/bash
 
 PKGS=(
+	# Xserver windowing
 	xorg
 	xorg-xinit
-	git
+	# Desktop environment
 	xmonad
 	xmonad-contrib
+	xmobar # xmonad status bar
+	# Run prompt
+	dmenu
+	# Utilities
+	git
+	curl
+	# Terminal emulator
 	termite
+	# Web browser
 	epiphany
+	# Audio control
+	pulseaudio
+	# Video player
+	mpv
 )
 
 echo "--Installing Packages--"
