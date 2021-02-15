@@ -4,7 +4,7 @@ PKGS=(
 	# Xserver windowing
 	xorg
 	xorg-xinit
-	# Desktop environment
+	# Window Manager
 	xmonad
 	xmonad-contrib
 	xmobar # xmonad status bar
@@ -13,9 +13,8 @@ PKGS=(
 	# Utilities
 	git
 	curl
-        # Wallpaper manager
-        nitrogen
-	# Terminal emulator
+	# Wallpaper manager
+	nitrogen
 	termite
 	# Web browser
 	epiphany
@@ -23,6 +22,12 @@ PKGS=(
 	pulseaudio
 	# Video player
 	mpv
+	# PDF viewer
+	xpdf
+	# zathura
+	# groff
+	# GUI file browser
+	pcmanfm
 )
 
 echo "--Installing Packages--"
