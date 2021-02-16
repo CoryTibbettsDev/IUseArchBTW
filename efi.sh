@@ -22,7 +22,7 @@ mkfs.ext4 -L arch "${DISK}1"
 mkfs.fat -F32 -n boot "${DISK}2" # (for UEFI systems only)
 mount "${DISK}1" /mnt
 mkdir -p /mnt/boot # (for UEFI systems only)
-mount "${DISK}2"/boot /mnt/boot # (for UEFI systems only)
+mount "${DISK}2" /mnt/boot # (for UEFI systems only)
 
 echo "-- Installing Kernel and Base Software --"
 pacstrap /mnt linux linux-firmware base base-devel grub efibootmgr sudo vim networkmanager --noconfirm
