@@ -14,21 +14,18 @@ timedatectl set-ntp true
 parted --script "${DISK}" \
 mklabel gpt \
 mkpart primary 512MiB -8GiB \
-mkpart primary linux-swap -8GiB 100% \
 mkpart ESP fat32 1MiB 512MiB \
 set 3 esp on
 
 echo "-- Making Filesysten and Swap--"
 mkfs.ext4 -L arch "${DISK}1"
-mkswap -L swap "${DISK}2"
-swapon "${DISK}2"
-mkfs.fat -F 32 -n "UEFISYS" "${DISK}3" # (for UEFI systems only)
+mkfs.fat -F32 -n boot "${DISK}2" # (for UEFI systems only)
 mount "${DISK}1" /mnt
 mkdir -p /mnt/boot # (for UEFI systems only)
-mount "${DISK}3"/boot /mnt/boot # (for UEFI systems only)
+mount "${DISK}2"/boot /mnt/boot # (for UEFI systems only)
 
 echo "-- Installing Kernel and Base Software --"
-pacstrap /mnt linux linux-firmware grub base base-devel sudo vim networkmanager wpa_supplicant --noconfirm --needed
+pacstrap /mnt linux linux-firmware base base-devel grub efibootmgr sudo vim networkmanager --noconfirm
 
 echo "-- Generating fstab --"
 genfstab -U /mnt >> /mnt/etc/fstab
@@ -52,7 +49,7 @@ echo "--Setting Hostname--"
 echo "${HOSTNAME}" >> /etc/hostname
 
 echo "--Installing Grub--"
-grub-install --efi-directory=/mnt/boot
+grub-install --efi-directory=/boot
 grub-mkconfig -o /boot/grub/grub.cfg
 
 echo "-- Enabling Wheel Group --"
