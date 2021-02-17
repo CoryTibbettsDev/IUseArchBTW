@@ -45,7 +45,7 @@ fi
 echo "-- Installing Kernel and Base Software --"
 pacstrap /mnt linux linux-firmware grub base base-devel sudo vim networkmanager --noconfirm --needed
 if [ "$EFI" = true ]; then
-	pacstrap efibootmgr --noconfirm
+	pacstrap /mnt efibootmgr --noconfirm
 fi
 
 echo "-- Generating fstab --"

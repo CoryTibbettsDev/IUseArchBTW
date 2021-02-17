@@ -35,6 +35,9 @@ PKGS=(
 	# groff
 	# Auto mount external devices
 	udiskie
+	# Virual Box
+	virtualbox
+	virtualbox-host-modules-arch
 )
 
 echo "--Installing Packages--"
