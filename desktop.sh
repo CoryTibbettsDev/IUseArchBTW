@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Script for installing desktop version of my system
+
 PKGS=(
 	# Xserver windowing
 	xorg
@@ -25,14 +27,14 @@ PKGS=(
 	alsa-utils
 	# Video player
 	mpv
+	# GUI file browser
+	pcmanfm
 	# PDF viewer
 	xpdf
 	# zathura
 	# groff
 	# Auto mount external devices
 	udiskie
-	# GUI file browser
-	pcmanfm
 )
 
 echo "--Installing Packages--"
@@ -53,6 +55,9 @@ cd ~
 echo "--Installing Librewolf--"
 # Install librewolf browser
 paru -S librewolf-bin
+
+# Change swappiness to better value
+sysctl vm.swappiness=10
 
 echo "--Getting Dotfiles--"
 cd /home/person
