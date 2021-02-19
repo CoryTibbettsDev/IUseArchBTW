@@ -7,9 +7,7 @@ PKGS=(
 	xorg
 	xorg-xinit
 	# Window Manager
-	xmonad
-	xmonad-contrib
-	xmobar # xmonad status bar
+	awesome
 	# Run prompt
 	dmenu
 	# Utilities
@@ -25,19 +23,23 @@ PKGS=(
 	# Audio control
 	alsa
 	alsa-utils
+	# Download YouTube videos and stream with mpv
+	youtube-dl
 	# Video player
 	mpv
 	# GUI file browser
 	pcmanfm
 	# PDF viewer
 	xpdf
-	# zathura
-	# groff
 	# Auto mount external devices
 	udiskie
+
+	# Packages I may want to install in the future
+	# zathura
+	# groff
 	# Virual Box
-	virtualbox
-	virtualbox-host-modules-arch
+	# virtualbox
+	# virtualbox-host-modules-arch
 )
 
 echo "--Installing Packages--"
@@ -60,7 +62,7 @@ echo "--Installing Librewolf--"
 paru -S librewolf-bin
 
 # Change swappiness to better value
-sysctl vm.swappiness=10
+sudo sysctl vm.swappiness=10
 
 echo "--Getting Dotfiles--"
 cd /home/person

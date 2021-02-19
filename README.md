@@ -7,8 +7,8 @@ To use: curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/maste
 bash IUseArchBTW<br  />
 **REMEMBER TO SET PASSWORD or you will not be able to get in**<br  />
 
-On first boot: curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/master/desktop.sh > desktop.sh<br  />
-bash desktop.sh<br  />
+On first boot: curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/master/me.sh > me.sh<br  />
+bash me.sh<br  />
 This will install the rest of the packages and all the dotfiles<br  />
 
-If you want a slightly more minimal install for a virtual machine use vm.sh instead. vm.sh includes some development packages aswell<br  />
+dev.sh is a development oriented setup<br  />
