@@ -2,14 +2,12 @@
 
 # Script for installing desktop version of my system
 
-PKGS=(
+BASE=(
 	# Xserver windowing
 	xorg
 	xorg-xinit
 	# Window Manager
 	awesome
-	# Run prompt
-	dmenu
 	# Utilities
 	git
 	neofetch
@@ -19,10 +17,13 @@ PKGS=(
 	# Terminal emulator
 	termite
 	# Web browser
-	epiphany
+	luakit
 	# Audio control
 	alsa
 	alsa-utils
+)
+
+MEDIA=(
 	# Download YouTube videos and stream with mpv
 	youtube-dl
 	# Video player
@@ -33,20 +34,36 @@ PKGS=(
 	xpdf
 	# Auto mount external devices
 	udiskie
-
-	# Packages I may want to install in the future
-	# zathura
-	# groff
-	# Virual Box
-	# virtualbox
-	# virtualbox-host-modules-arch
 )
 
+DEV=(
+	# NodeJS
+	nodejs
+	npm
+)
+
+# Packages I may want to install in the future
+# zathura
+# groff
+# Virual Box
+# virtualbox
+# virtualbox-host-modules-arch
+
 echo "--Installing Packages--"
-for PKG in "${PKGS[@]}"; do
+for PKG in "${BASE[@]}"; do
 	echo "Installing $PKG"
 	sudo pacman -S "$PKG" --noconfirm
 done
+
+for PKG in "${MEDIA[@]}"; do
+	echo "Installing $PKG"
+	sudo pacman -S "$PKG" --noconfirm
+done
+
+# for PKG in "${DEV[@]}"; do
+# 	echo "Installing $PKG"
+# 	sudo pacman -S "$PKG" --noconfirm
+# done
 
 echo "--Installing Paru--"
 # Install paru Arch User Rrpository helper

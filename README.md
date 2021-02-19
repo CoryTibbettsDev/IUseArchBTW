@@ -7,8 +7,7 @@ To use: curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/maste
 bash IUseArchBTW<br  />
 **REMEMBER TO SET PASSWORD or you will not be able to get in**<br  />
 
-On first boot: curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/master/me.sh > me.sh<br  />
-bash me.sh<br  />
+On first boot: curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/master/packages.sh > packages.sh<br  />
+bash packages.sh<br  />
+Insert or delete the packages you do or do not want<br  />
 This will install the rest of the packages and all the dotfiles<br  />
-
-dev.sh is a development oriented setup<br  />
