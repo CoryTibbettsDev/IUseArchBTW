@@ -69,14 +69,6 @@ echo "LANG=en_US.UTF-8" >> /etc/locale.conf
 echo "--Setting Hostname--"
 echo "${HOSTNAME}" >> /etc/hostname
 
-echo "--Installing Grub--"
-if [ "$EFI" = true ]; then
-	grub-install --efi-directory=/boot
-else
-	grub-install --target=i386-pc "${DISK}"
-fi
-grub-mkconfig -o /boot/grub/grub.cfg || echo "--Grub did not install correctly--"
-
 echo "--NetworkManager--"
 systemctl enable --now NetworkManager && echo "--NetworkManager Working--" || echo "--NetworkManager not working--"
 
@@ -90,6 +82,21 @@ echo "--Creating User--"
 useradd -mg wheel "${USERNAME}"
 
 EOF
+
+# If statements are not read if EOF so we have to move outside to install
+# correct grub configuration
+# EOF need to be not indented on end/closing line otherwise it causes error
+echo "--Installing Grub--"
+if [ "$EFI" = true ]; then
+	cat << EOF | arch-chroot /mnt
+	grub-install --efi-directory=/boot
+EOF
+else
+	cat << EOF | arch-chroot /mnt
+	grub-install --target=i386-pc "${DISK}"
+EOF
+fi
+grub-mkconfig -o /boot/grub/grub.cfg || echo "--Grub did not install correctly--"
 
 echo "All Done Hopefully It Works"
 echo "Remember to arch-chroot /mnt and set passwd for root and user"

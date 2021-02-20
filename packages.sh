@@ -28,6 +28,8 @@ MEDIA=(
 	youtube-dl
 	# Video player
 	mpv
+	# Image viewer
+	geeqie
 	# GUI file browser
 	pcmanfm
 	# PDF viewer
@@ -76,7 +78,7 @@ cd ~
 
 echo "--Installing Librewolf--"
 # Install librewolf browser
-paru -S librewolf-bin
+sudo paru -S librewolf-bin --noconfirm
 
 # Change swappiness to better value
 sudo sysctl vm.swappiness=10
