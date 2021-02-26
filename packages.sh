@@ -2,7 +2,7 @@
 
 # Script for installing desktop version of my system
 
-BASE=(
+PACKAGES=(
 	# Xserver windowing
 	xorg
 	xorg-xinit
@@ -17,13 +17,12 @@ BASE=(
 	# Terminal emulator
 	termite
 	# Web browser
-	luakit
+	epiphany
 	# Audio control
 	alsa
 	alsa-utils
-)
 
-MEDIA=(
+    ########## MEDIA STUFF #############
 	# Download YouTube videos and stream with mpv
 	youtube-dl
 	# Video player
@@ -36,36 +35,48 @@ MEDIA=(
 	xpdf
 	# Auto mount external devices
 	udiskie
+    ####################################
+
+    ######### DRIVERS ##################
+    # Drivers for GPUs generally don't need for basic boot just games/intense graphics programs
+    # Info from link below
+    # https://github.com/lutris/docs/blob/master/InstallingDrivers.md
+
+    # If you want to run 32 bit applications install the 32 bit packages 
+    # edit /etc/pacman.conf and uncomment the mutlilib mirror list
+
+    # vulkan-validation-layers
+    ## AMD
+    # vulkan-radeon
+    # vulkan-icd-loader
+    ## 32 bit AMD
+    # lib32-mesa
+    # lib32-vulkan-radeon
+    # lib32-vulkan-icd-loader
+
+    ## Nvidia
+    # nvidia-dkms
+    # nvidia-utils
+    # nvidia-settings
+    # vulkan-icd-loader
+    ## 32 bit Nvidia
+    # lib32-nvidia-utils
+    # lib32-vulkan-icd-loader
+
+    ## Intel
+    # vulkan-intel
+    # vulkan-icd-loader
+    # 32 bit Intel
+    ## lib32-mesa
+    # lib32-vulkan-intel
+    # lib32-vulkan-icd-loader
+    ################################
 )
-
-DEV=(
-	# NodeJS
-	nodejs
-	npm
-)
-
-# Packages I may want to install in the future
-# zathura
-# groff
-# Virual Box
-# virtualbox
-# virtualbox-host-modules-arch
-
 echo "--Installing Packages--"
-for PKG in "${BASE[@]}"; do
+for PKG in "${PACKAGES[@]}"; do
 	echo "Installing $PKG"
 	sudo pacman -S "$PKG" --noconfirm
 done
-
-for PKG in "${MEDIA[@]}"; do
-	echo "Installing $PKG"
-	sudo pacman -S "$PKG" --noconfirm
-done
-
-# for PKG in "${DEV[@]}"; do
-# 	echo "Installing $PKG"
-# 	sudo pacman -S "$PKG" --noconfirm
-# done
 
 echo "--Installing Paru--"
 # Install paru Arch User Rrpository helper
@@ -78,7 +89,11 @@ cd ~
 
 echo "--Installing Librewolf--"
 # Install librewolf browser
-sudo paru -S librewolf-bin --noconfirm
+paru -S librewolf-bin --noconfirm
+
+# Command line tool for searching YouTube Videos
+echo "--Installing ytfzf--"
+paru -S ytfzf-git --noconfirm
 
 # Change swappiness to better value
 sudo sysctl vm.swappiness=10

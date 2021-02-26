@@ -5,9 +5,11 @@
 
 To use: curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/master/IUseArchBTW > IUseArchBTW<br  />
 bash IUseArchBTW<br  />
+Auto Run: curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/master/IUseArchBTW | bash<br  />
 **REMEMBER TO SET PASSWORD or you will not be able to get in**<br  />
 
 On first boot: curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/master/packages.sh > packages.sh<br  />
 bash packages.sh<br  />
-Insert or delete the packages you do or do not want<br  />
+Auto Run: curl https://raw.githubusercontent.com/CoryTibbettsDev/IUseArchBTW/master/packages.sh | bash<br  />
 This will install the rest of the packages and all the dotfiles<br  />
+Insert or delete the packages you do or do not want<br  />
