@@ -22,7 +22,7 @@ PACKAGES=(
 	alsa
 	alsa-utils
 
-    ########## MEDIA STUFF #############
+    #### MEDIA STUFF ####
 	# Download YouTube videos and stream with mpv
 	youtube-dl
 	# Video player
@@ -35,14 +35,35 @@ PACKAGES=(
 	xpdf
 	# Auto mount external devices
 	udiskie
-    ####################################
+    ## 3d modeling
+    # blender
+    ## Raster image editor
+    # gimp
+    ## Vector based image editor
+    # inkscape
+    ## Adobe lightroom alternative
+    # darktable
+    #############################################
 
-    ######### DRIVERS ##################
+    #### Games ####
+    ## Open source game launcher (recommend for new user)
+    # lutris
+
+    ## Closed source game market place
+    ## Run native linux games or Proton for non native games
+    ## Check out https://www.protondb.com/ for info on how well games run
+    # steam
+
+    ## Open Source RTS
+    # 0ad
+    ##############################################
+
+    #### DRIVERS ####
     # Drivers for GPUs generally don't need for basic boot just games/intense graphics programs
     # Info from link below
     # https://github.com/lutris/docs/blob/master/InstallingDrivers.md
 
-    # If you want to run 32 bit applications install the 32 bit packages 
+    # If you want to run 32 bit applications install the 32 bit packages
     # edit /etc/pacman.conf and uncomment the mutlilib mirror list
 
     # vulkan-validation-layers
@@ -70,7 +91,7 @@ PACKAGES=(
     ## lib32-mesa
     # lib32-vulkan-intel
     # lib32-vulkan-icd-loader
-    ################################
+    ###############################################
 )
 echo "--Installing Packages--"
 for PKG in "${PACKAGES[@]}"; do
@@ -99,7 +120,7 @@ paru -S ytfzf-git --noconfirm
 sudo sysctl vm.swappiness=10
 
 echo "--Getting Dotfiles--"
-cd /home/person
+cd ~
 git clone https://github.com/CoryTibbettsDev/.dotfiles
 cd .dotfiles
 bash create_symlinks.sh

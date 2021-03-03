@@ -75,11 +75,11 @@ systemctl enable --now NetworkManager && echo "--NetworkManager Working--" || ec
 echo "ctrl_interface=/run/wpa_supplicant" >> /etc/wpa_supplicant/wpa_supplicant.conf
 echo "update_config=1" >> /etc/wpa_supplicant/wpa_supplicant.conf
 
-echo "-- Enabling Wheel Group --"
-echo "%wheel ALL=(ALL) ALL" >> /etc/sudoers
-
 echo "--Creating User--"
-useradd -mg wheel "${USERNAME}"
+useradd -mU "${USERNAME}"
+
+echo "-- Enabling Sudo --"
+echo "%${USERNAME} ALL=(ALL) ALL" >> /etc/sudoers
 
 EOF
 
