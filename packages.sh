@@ -1,8 +1,22 @@
 #!/bin/bash
 
 # Script for installing desktop version of my system
+# Many packages are listed but I do not use them myself
+# they are for other hardware configurations or for tasks I do not do
+# such as video editing
 
 PACKAGES=(
+    #### Text Editors ####
+    ## Command line interface
+    neovim
+    # vim
+    # micro
+    ## Graphical interface
+    # emacs
+    # geany
+    # gedit
+    ################################################
+
 	# Xserver windowing
 	xorg
 	xorg-xinit
@@ -41,7 +55,7 @@ PACKAGES=(
     # gimp
     ## Vector based image editor
     # inkscape
-    ## Adobe lightroom alternative
+    ## Adobe lightroom alternative never used myself just what I have heard
     # darktable
     #############################################
 
@@ -102,7 +116,7 @@ done
 echo "--Installing Paru--"
 # Install paru Arch User Rrpository helper
 cd ~
-sudo pacman -S --needed base-devel --noconfirm
+sudo pacman -S base-devel --noconfirm
 git clone https://aur.archlinux.org/paru.git
 cd paru
 makepkg -si
@@ -112,7 +126,9 @@ echo "--Installing Librewolf--"
 # Install librewolf browser
 paru -S librewolf-bin --noconfirm
 
-# Command line tool for searching YouTube Videos
+# Command line tool for searching and watching YouTube Videos
+# Dependencies are youtube-dl, mpv, jq, (optional for a menu) fzf, (optional for images) ueberzug
+# Source code: https://github.com/pystardust/ytfzf
 echo "--Installing ytfzf--"
 paru -S ytfzf-git --noconfirm
 
@@ -124,3 +140,7 @@ cd ~
 git clone https://github.com/CoryTibbettsDev/.dotfiles
 cd .dotfiles
 bash create_symlinks.sh
+
+# Setup home directory
+cd ~
+mkdir -v Downloads Media Projects Books
