@@ -1,82 +1,48 @@
 #!/bin/bash
 
-# Script for installing desktop version of my system
-# Many packages are listed but I do not use them myself
-# they are for other hardware configurations or for tasks I do not do
-# such as video editing
+# Script for installing all the packages on my system
 
 PACKAGES=(
-    #### Text Editors ####
-    ## Command line interface
+    # Text Editors ####
     neovim
-    # vim
-    # micro
-    ## Graphical interface
-    # emacs
-    # geany
-    # gedit
-    ################################################
-
 	# Xserver windowing
 	xorg
 	xorg-xinit
+	# Run nested xorg server for developement
+	# xorg-server-xephyr
 	# Window Manager
 	awesome
 	# Utilities
 	git
 	neofetch
 	htop
-	# Wallpaper manager
-	nitrogen
 	# Terminal emulator
-	termite
-	# Web browser
-	epiphany
+	kitty
+	# Run prompt
+	rofi
 	# Audio control
 	alsa
 	alsa-utils
-
-    #### MEDIA STUFF ####
-	# Download YouTube videos and stream with mpv
+	# Web browser
+	epiphany
+	# Download videos
 	youtube-dl
 	# Video player
 	mpv
 	# Image viewer
-	geeqie
+	feh # Also use for setting wallpaper
+	# CLI file browser
+	ranger
 	# GUI file browser
 	pcmanfm
-	# PDF viewer
-	xpdf
+	# Document viewer
+	zathura # https://wiki.archlinux.org/index.php/Zathura
+	zathura-pdf-mupfd # PDF EPUB XPS support
 	# Auto mount external devices
 	udiskie
-    ## 3d modeling
-    # blender
-    ## Raster image editor
-    # gimp
-    ## Vector based image editor
-    # inkscape
-    ## Adobe lightroom alternative never used myself just what I have heard
-    # darktable
-    #############################################
-
-    #### Games ####
-    ## Open source game launcher (recommend for new user)
-    # lutris
-
-    ## Closed source game market place
-    ## Run native linux games or Proton for non native games
-    ## Check out https://www.protondb.com/ for info on how well games run
-    # steam
-
-    ## Open Source RTS
-    # 0ad
-    ##############################################
 
     #### DRIVERS ####
-    # Drivers for GPUs generally don't need for basic boot just games/intense graphics programs
-    # Info from link below
     # https://github.com/lutris/docs/blob/master/InstallingDrivers.md
-
     # If you want to run 32 bit applications install the 32 bit packages
     # edit /etc/pacman.conf and uncomment the mutlilib mirror list
 
@@ -101,11 +67,10 @@ PACKAGES=(
     ## Intel
     # vulkan-intel
     # vulkan-icd-loader
-    # 32 bit Intel
-    ## lib32-mesa
+    ## 32 bit Intel
+    # lib32-mesa
     # lib32-vulkan-intel
     # lib32-vulkan-icd-loader
-    ###############################################
 )
 echo "--Installing Packages--"
 for PKG in "${PACKAGES[@]}"; do
@@ -127,7 +92,8 @@ echo "--Installing Librewolf--"
 paru -S librewolf-bin --noconfirm
 
 # Command line tool for searching and watching YouTube Videos
-# Dependencies are youtube-dl, mpv, jq, (optional for a menu) fzf, (optional for images) ueberzug
+# Dependencies are youtube-dl, mpv, jq, (optional for a menu) fzf,
+# (optional for thumbnails) ueberzug
 # Source code: https://github.com/pystardust/ytfzf
 echo "--Installing ytfzf--"
 paru -S ytfzf-git --noconfirm
@@ -143,4 +109,4 @@ bash create_symlinks.sh
 
 # Setup home directory
 cd ~
-mkdir -v Downloads Media Projects Books
+mkdir -v Downloads Projects Stuff
