@@ -1,12 +1,12 @@
 #!/bin/bash
 
-echo "Enter Username"
+printf "Enter Username"
 read USERNAME
-echo "Enter Hostname (Name of the Computer)"
+printf "Enter Hostname (Name of the Computer)"
 read HOSTNAME
 
 lsblk
-echo "Enter disk (Example: /dev/sda)"
+printf "Enter disk (Example: /dev/sda)"
 read DISK
 
 timedatectl set-ntp true
@@ -14,7 +14,7 @@ timedatectl set-ntp true
 # Check if the system is booted as UEFI or Legacy BIOS
 ls /sys/firmware/efi/efivars && EFI=true || EFI=false
 
-echo "-- Partitioning Drive --"
+printf "-- Partitioning Drive --"
 if [ "$EFI" = true ]; then
 	parted --script "${DISK}" \
 	mklabel gpt \
@@ -29,7 +29,7 @@ else
 	mkpart primary linux-swap -8GiB 100%
 fi
 
-echo "-- Making Filesysten --"
+printf "-- Making Filesysten --"
 mkfs.ext4 -L arch "${DISK}1"
 mkswap -L swap "${DISK}2"
 swapon "${DISK}2"
@@ -42,51 +42,51 @@ if [ "$EFI" = true ]; then
 	mount "${DISK}3" /mnt/boot # (for UEFI systems only)
 fi
 
-echo "-- Installing Kernel and Base Software --"
+printf "-- Installing Kernel and Base Software --"
 pacstrap /mnt linux linux-firmware grub base base-devel sudo neovim networkmanager --noconfirm --needed
 if [ "$EFI" = true ]; then
 	pacstrap /mnt efibootmgr --noconfirm
 fi
 
-echo "-- Generating fstab --"
+printf "-- Generating fstab --"
 genfstab -U /mnt >> /mnt/etc/fstab
 
-echo "--Chroot--"
+printf "--Chroot--"
 # Commands executed inside /mnt
 cat << EOF | arch-chroot /mnt
 
-echo "--Symlink Time--"
+printf "--Symlink Time--"
 ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
 
-echo "--Hardware Clock--"
+printf "--Hardware Clock--"
 hwclock --systohc
 
-echo "--Generating Locale--"
-echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+printf "--Generating Locale--"
+printf "en_US.UTF-8 UTF-8" >> /etc/locale.gen
 locale-gen
-echo "LANG=en_US.UTF-8" >> /etc/locale.conf
+printf "LANG=en_US.UTF-8" >> /etc/locale.conf
 
-echo "--Setting Hostname--"
-echo "${HOSTNAME}" >> /etc/hostname
+printf "--Setting Hostname--"
+printf "${HOSTNAME}" >> /etc/hostname
 
-echo "--NetworkManager--"
-systemctl enable --now NetworkManager && echo "--NetworkManager Working--" || echo "--NetworkManager not working--"
+printf "--NetworkManager--"
+systemctl enable --now NetworkManager && printf "--NetworkManager Working--" || printf "--NetworkManager not working--"
 
-echo "ctrl_interface=/run/wpa_supplicant" >> /etc/wpa_supplicant/wpa_supplicant.conf
-echo "update_config=1" >> /etc/wpa_supplicant/wpa_supplicant.conf
+printf "ctrl_interface=/run/wpa_supplicant" >> /etc/wpa_supplicant/wpa_supplicant.conf
+printf "update_config=1" >> /etc/wpa_supplicant/wpa_supplicant.conf
 
-echo "--Creating User--"
+printf "--Creating User--"
 useradd -mU "${USERNAME}"
 
-echo "-- Enabling Sudo --"
-echo "%${USERNAME} ALL=(ALL) ALL" >> /etc/sudoers
+printf "-- Enabling Sudo for ${USERNAME} --"
+printf "%${USERNAME} ALL=(ALL) ALL" >> /etc/sudoers
 
 EOF
 
-# If statements are not read if EOF so we have to move outside to install
+# If statements are not read in EOF so we have to move outside to install
 # correct grub configuration
 # EOF need to be not indented on end/closing line otherwise it causes error
-echo "--Installing Grub--"
+printf "--Installing Grub--"
 if [ "$EFI" = true ]; then
 	cat << EOF | arch-chroot /mnt
 	grub-install --efi-directory=/boot
@@ -98,5 +98,5 @@ EOF
 fi
 grub-mkconfig -o /boot/grub/grub.cfg
 
-echo "All Done Hopefully It Works"
-echo "Remember to arch-chroot /mnt and set passwd for root and user"
+printf "All Done Hopefully It Works"
+printf "Remember to arch-chroot /mnt and set passwd for root and ${USERNAME}"

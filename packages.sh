@@ -3,8 +3,8 @@
 # Script for installing all the packages on my system
 
 PACKAGES=(
-    # Text Editors ####
-    neovim
+	# Text Editors ####
+	neovim
 	# Xserver windowing
 	xorg
 	xorg-xinit
@@ -40,6 +40,8 @@ PACKAGES=(
 	zathura-pdf-mupfd # PDF EPUB XPS support
 	# Auto mount external devices
 	udiskie
+	# Needed for ytfzf menu
+	fzf
 
     #### DRIVERS ####
     # https://github.com/lutris/docs/blob/master/InstallingDrivers.md
@@ -100,6 +102,7 @@ paru -S ytfzf-git --noconfirm
 
 # Change swappiness to better value
 sudo sysctl vm.swappiness=10
+echo "vm.swappiness=10" > /etc/sysctl.d/99-swappiness.conf
 
 echo "--Getting Dotfiles--"
 cd ~
