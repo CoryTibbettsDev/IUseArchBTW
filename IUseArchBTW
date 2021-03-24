@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 printf "Enter Username"
 read USERNAME
@@ -49,7 +49,7 @@ if [ "$EFI" = true ]; then
 fi
 
 printf "-- Generating fstab --"
-genfstab -U /mnt >> /mnt/etc/fstab
+genfstab -U /mnt | tee -a /mnt/etc/fstab
 
 printf "--Chroot--"
 # Commands executed inside /mnt
@@ -62,24 +62,24 @@ printf "--Hardware Clock--"
 hwclock --systohc
 
 printf "--Generating Locale--"
-printf "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+printf "en_US.UTF-8 UTF-8" | tee -a /etc/locale.gen
 locale-gen
-printf "LANG=en_US.UTF-8" >> /etc/locale.conf
+printf "LANG=en_US.UTF-8" | tee -a /etc/locale.conf
 
 printf "--Setting Hostname--"
-printf "${HOSTNAME}" >> /etc/hostname
+printf "${HOSTNAME}" | tee -a /etc/hostname
 
 printf "--NetworkManager--"
 systemctl enable --now NetworkManager && printf "--NetworkManager Working--" || printf "--NetworkManager not working--"
 
-printf "ctrl_interface=/run/wpa_supplicant" >> /etc/wpa_supplicant/wpa_supplicant.conf
-printf "update_config=1" >> /etc/wpa_supplicant/wpa_supplicant.conf
+printf "ctrl_interface=/run/wpa_supplicant" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
+printf "update_config=1" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
 
 printf "--Creating User--"
 useradd -mU "${USERNAME}"
 
 printf "-- Enabling Sudo for ${USERNAME} --"
-printf "%${USERNAME} ALL=(ALL) ALL" >> /etc/sudoers
+printf "%${USERNAME} ALL=(ALL) ALL" | tee -a /etc/sudoers
 
 EOF
 
