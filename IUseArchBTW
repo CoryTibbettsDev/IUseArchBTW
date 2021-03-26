@@ -1,9 +1,9 @@
 #!/bin/sh
 
 echo "Enter Username"
-read USERNAME
+read NAMEINPUT
 echo "Enter Hostname (Name of the Computer)"
-read HOSTNAME
+read HOSTINPUT
 
 lsblk
 echo "Enter disk (Example: /dev/sda)"
@@ -68,7 +68,7 @@ locale-gen
 echo "LANG=en_US.UTF-8" | tee -a /etc/locale.conf
 
 echo "--Setting Hostname--"
-echo "${HOSTNAME}" | tee -a /etc/hostname
+echo "${HOSTINPUT}" | tee -a /etc/hostname
 
 echo "--NetworkManager--\n"
 systemctl enable --now NetworkManager && echo "--NetworkManager Working--\n" || echo "--NetworkManager not working--\n"
@@ -77,10 +77,10 @@ echo "ctrl_interface=/run/wpa_supplicant" | tee -a /etc/wpa_supplicant/wpa_suppl
 echo "update_config=1" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
 
 echo "Creating User"
-useradd -mU "${USERNAME}"
+useradd -mU "${NAMEINPUT}"
 
-echo "Enabling Sudo for ${USERNAME}"
-echo "%${USERNAME} ALL=(ALL) ALL" | tee -a /etc/sudoers
+echo "Enabling Sudo for ${NAMEINPUT}"
+echo "%${NAMEINPUT} ALL=(ALL) ALL" | tee -a /etc/sudoers
 
 EOF
 
@@ -100,4 +100,4 @@ fi
 grub-mkconfig -o /boot/grub/grub.cfg
 
 echo "All Done Hopefully It Works"
-echo "Remember to arch-chroot /mnt and set passwd for root and ${USERNAME}"
+echo "Remember to arch-chroot /mnt and set passwd for root and ${NAMEINPUT}"
