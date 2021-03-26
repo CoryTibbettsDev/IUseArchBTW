@@ -1,12 +1,12 @@
 #!/bin/sh
 
-printf "Enter Username"
+echo "Enter Username"
 read USERNAME
-printf "Enter Hostname (Name of the Computer)"
+echo "Enter Hostname (Name of the Computer)"
 read HOSTNAME
 
 lsblk
-printf "Enter disk (Example: /dev/sda)"
+echo "Enter disk (Example: /dev/sda)"
 read DISK
 
 timedatectl set-ntp true
@@ -14,7 +14,7 @@ timedatectl set-ntp true
 # Check if the system is booted as UEFI or Legacy BIOS
 ls /sys/firmware/efi/efivars && EFI=true || EFI=false
 
-printf "-- Partitioning Drive --"
+echo "Partitioning Drive"
 if [ "$EFI" = true ]; then
 	parted --script "${DISK}" \
 	mklabel gpt \
@@ -29,64 +29,65 @@ else
 	mkpart primary linux-swap -8GiB 100%
 fi
 
-printf "-- Making Filesysten --"
+echo "Making Filesysten"
 mkfs.ext4 -L arch "${DISK}1"
 mkswap -L swap "${DISK}2"
 swapon "${DISK}2"
 if [ "$EFI" = true ]; then
-	mkfs.fat -F 32 -n "UEFISYS" "${DISK}3" # (for UEFI systems only)
+	mkfs.fat -F 32 -n "UEFISYS" "${DISK}3"
 fi
 mount "${DISK}1" /mnt
 if [ "$EFI" = true ]; then
-	mkdir -p /mnt/boot # (for UEFI systems only)
-	mount "${DISK}3" /mnt/boot # (for UEFI systems only)
+	mkdir -p /mnt/boot
+	mount "${DISK}3" /mnt/boot
 fi
 
-printf "-- Installing Kernel and Base Software --"
+echo "Installing Kernel and Base Software"
 pacstrap /mnt linux linux-firmware grub base base-devel sudo neovim networkmanager --noconfirm --needed
 if [ "$EFI" = true ]; then
 	pacstrap /mnt efibootmgr --noconfirm
 fi
 
-printf "-- Generating fstab --"
+echo "Generating fstab"
 genfstab -U /mnt | tee -a /mnt/etc/fstab
 
-printf "--Chroot--"
+echo "Chrooting"
 # Commands executed inside /mnt
+# This probably is not the best way to do this but I have not found another way
 cat << EOF | arch-chroot /mnt
 
-printf "--Symlink Time--"
+echo "Symlink Time"
 ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
 
-printf "--Hardware Clock--"
+echo "-Hardware Clock"
 hwclock --systohc
 
-printf "--Generating Locale--"
-printf "en_US.UTF-8 UTF-8" | tee -a /etc/locale.gen
+echo "Generating Locale"
+echo "en_US.UTF-8 UTF-8" | tee -a /etc/locale.gen
 locale-gen
-printf "LANG=en_US.UTF-8" | tee -a /etc/locale.conf
+echo "LANG=en_US.UTF-8" | tee -a /etc/locale.conf
 
-printf "--Setting Hostname--"
-printf "${HOSTNAME}" | tee -a /etc/hostname
+echo "--Setting Hostname--"
+echo "${HOSTNAME}" | tee -a /etc/hostname
 
-printf "--NetworkManager--"
-systemctl enable --now NetworkManager && printf "--NetworkManager Working--" || printf "--NetworkManager not working--"
+echo "--NetworkManager--\n"
+systemctl enable --now NetworkManager && echo "--NetworkManager Working--\n" || echo "--NetworkManager not working--\n"
 
-printf "ctrl_interface=/run/wpa_supplicant" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
-printf "update_config=1" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
+echo "ctrl_interface=/run/wpa_supplicant" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
+echo "update_config=1" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
 
-printf "--Creating User--"
+echo "Creating User"
 useradd -mU "${USERNAME}"
 
-printf "-- Enabling Sudo for ${USERNAME} --"
-printf "%${USERNAME} ALL=(ALL) ALL" | tee -a /etc/sudoers
+echo "Enabling Sudo for ${USERNAME}"
+echo "%${USERNAME} ALL=(ALL) ALL" | tee -a /etc/sudoers
 
 EOF
 
 # If statements are not read in EOF so we have to move outside to install
 # correct grub configuration
 # EOF need to be not indented on end/closing line otherwise it causes error
-printf "--Installing Grub--"
+echo "Installing Grub"
 if [ "$EFI" = true ]; then
 	cat << EOF | arch-chroot /mnt
 	grub-install --efi-directory=/boot
@@ -98,5 +99,5 @@ EOF
 fi
 grub-mkconfig -o /boot/grub/grub.cfg
 
-printf "All Done Hopefully It Works"
-printf "Remember to arch-chroot /mnt and set passwd for root and ${USERNAME}"
+echo "All Done Hopefully It Works"
+echo "Remember to arch-chroot /mnt and set passwd for root and ${USERNAME}"

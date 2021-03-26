@@ -16,8 +16,12 @@ PACKAGES=(
 	awesome
 	# Utilities
 	git
-	neofetch
+	tree
 	htop
+	neofetch
+	# For naviagting source code with vim
+	# jump to definition with Ctrl-] jump back with Ctrl-o
+	ctags
 	# Terminal emulator
 	kitty
 	# Run prompt
@@ -40,10 +44,9 @@ PACKAGES=(
 	# Document viewer
 	zathura # https://wiki.archlinux.org/index.php/Zathura
 	zathura-pdf-mupfd # PDF EPUB XPS support
-	# Auto mount external devices
-	udiskie
-	# Needed for ytfzf menu
-	fzf
+
+	#### Games ####
+	# wesnoth
 
 	#### DRIVERS ####
 	# https://github.com/lutris/docs/blob/master/InstallingDrivers.md
@@ -77,22 +80,23 @@ PACKAGES=(
 	# lib32-vulkan-intel
 	# lib32-vulkan-icd-loader
 )
-printf "--Installing Packages--"
+echo "Installing Packages"
 for PKG in "${PACKAGES[@]}"; do
-	printf "Installing $PKG"
+	echo "Installing $PKG"
 	sudo pacman -S "$PKG" --noconfirm
 done
 
-printf "--Installing Paru--"
+echo "Installing Paru"
 # Install paru Arch User Rrpository helper
 cd ~
+# Dependencies
 sudo pacman -S base-devel --noconfirm
 git clone https://aur.archlinux.org/paru.git
 cd paru
 makepkg -si
 cd ~
 
-printf "--Installing Librewolf--"
+echo "Installing Librewolf"
 # Install librewolf browser
 paru -S librewolf-bin --noconfirm
 
@@ -100,19 +104,24 @@ paru -S librewolf-bin --noconfirm
 # Dependencies are youtube-dl, mpv, jq, (optional for a menu) fzf,
 # (optional for thumbnails) ueberzug
 # Source code: https://github.com/pystardust/ytfzf
-printf "--Installing ytfzf--"
+echo "--Installing ytfzf--"
+# Dependencies
+# Mandatory
+sudo pacman -S mpv youtube-dl jq
+# Optional
+sudo pacman -S fzf # ueberzug
 paru -S ytfzf-git --noconfirm
 
 # Change swappiness to better value
 sudo sysctl vm.swappiness=10
-printf "vm.swappiness=10" | sudo tee -a /etc/sysctl.d/99-swappiness.conf
+echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.d/99-swappiness.conf
 
-printf "--Getting Dotfiles--"
+echo "Getting Dotfiles"
 cd ~
 git clone https://github.com/CoryTibbettsDev/.dotfiles
 cd .dotfiles
-bash create_symlinks.sh
+sh create_symlinks.sh
 
 # Setup home directory
 cd ~
-mkdir -v Downloads Projects Stuff
+mkdir -v Code Downloads Projects Stuff
