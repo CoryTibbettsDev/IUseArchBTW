@@ -5,7 +5,7 @@
 # Would like to detect the hardware and install based on that
 
 PACKAGES=(
-	# Text Editors ####
+	# Text Editor
 	neovim
 	# Xserver windowing
 	xorg
@@ -18,7 +18,6 @@ PACKAGES=(
 	git
 	tree
 	htop
-	neofetch
 	# For naviagting source code with vim
 	# jump to definition with Ctrl-] jump back with Ctrl-o
 	ctags
@@ -44,6 +43,9 @@ PACKAGES=(
 	# Document viewer
 	zathura # https://wiki.archlinux.org/index.php/Zathura
 	zathura-pdf-mupfd # PDF EPUB XPS support
+
+	#### VirtualBox ####
+	# virtualbox-host-modules-arch
 
 	#### Games ####
 	# wesnoth
@@ -104,10 +106,10 @@ paru -S librewolf-bin --noconfirm
 # Dependencies are youtube-dl, mpv, jq, (optional for a menu) fzf,
 # (optional for thumbnails) ueberzug
 # Source code: https://github.com/pystardust/ytfzf
-echo "--Installing ytfzf--"
+echo "Installing ytfzf"
 # Dependencies
 # Mandatory
-sudo pacman -S mpv youtube-dl jq
+sudo pacman -S mpv youtube-dl jq --noconfirm
 # Optional
 sudo pacman -S fzf # ueberzug
 paru -S ytfzf-git --noconfirm
@@ -124,4 +126,4 @@ sh create_symlinks.sh
 
 # Setup home directory
 cd ~
-mkdir -v Code Downloads Projects Stuff
+mkdir -v Downloads Media Projects Source

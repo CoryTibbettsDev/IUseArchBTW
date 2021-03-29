@@ -59,7 +59,7 @@ cat << EOF | arch-chroot /mnt
 echo "Symlink Time"
 ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
 
-echo "-Hardware Clock"
+echo "Hardware Clock"
 hwclock --systohc
 
 echo "Generating Locale"
@@ -67,17 +67,17 @@ echo "en_US.UTF-8 UTF-8" | tee -a /etc/locale.gen
 locale-gen
 echo "LANG=en_US.UTF-8" | tee -a /etc/locale.conf
 
-echo "--Setting Hostname--"
+echo "Setting Hostname"
 echo "${HOSTINPUT}" | tee -a /etc/hostname
 
-echo "--NetworkManager--\n"
-systemctl enable --now NetworkManager && echo "--NetworkManager Working--\n" || echo "--NetworkManager not working--\n"
+echo "NetworkManager"
+systemctl enable --now NetworkManager && echo "NetworkManager Working" || echo "NetworkManager not working"
 
 echo "ctrl_interface=/run/wpa_supplicant" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
 echo "update_config=1" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
 
 echo "Creating User"
-useradd -mU "${NAMEINPUT}"
+useradd --create-home --user-group "${NAMEINPUT}"
 
 echo "Enabling Sudo for ${NAMEINPUT}"
 echo "%${NAMEINPUT} ALL=(ALL) ALL" | tee -a /etc/sudoers
