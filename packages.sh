@@ -43,6 +43,8 @@ PACKAGES=(
 	# Document viewer
 	zathura # https://wiki.archlinux.org/index.php/Zathura
 	zathura-pdf-mupfd # PDF EPUB XPS support
+	# Auto mount external devices
+	udiskie
 
 	#### VirtualBox ####
 	# virtualbox-host-modules-arch
