@@ -5,17 +5,21 @@
 # Would like to detect the hardware and install based on that
 
 PACKAGES=(
+	# Documentation
+	man-pages
 	# Text Editor
 	neovim
 	# Xserver windowing
 	xorg
 	xorg-xinit
-	# Run nested xorg server for developement
+	## Run nested xorg server for developement
 	# xorg-server-xephyr
 	# Window Manager
 	awesome
-	# Utilities
+	# Version Control
 	git
+	cvs
+	# Utilities
 	tree
 	htop
 	# For naviagting source code with vim
@@ -47,7 +51,11 @@ PACKAGES=(
 	udiskie
 
 	#### VirtualBox ####
+	# virtualbox
+	## For normal arch kernel
 	# virtualbox-host-modules-arch
+	## For other kernels
+	# virtualbox-host-dkms
 
 	#### Games ####
 	# wesnoth
@@ -110,10 +118,7 @@ paru -S librewolf-bin --noconfirm
 # Source code: https://github.com/pystardust/ytfzf
 echo "Installing ytfzf"
 # Dependencies
-# Mandatory
-sudo pacman -S mpv youtube-dl jq --noconfirm
-# Optional
-sudo pacman -S fzf # ueberzug
+sudo pacman -S mpv youtube-dl jq fzf # ueberzug --noconfirm
 paru -S ytfzf-git --noconfirm
 
 # Change swappiness to better value

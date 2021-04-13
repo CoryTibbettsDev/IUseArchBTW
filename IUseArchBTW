@@ -1,5 +1,29 @@
 #!/bin/sh
 
+# Check if the system is booted as UEFI or Legacy BIOS
+ls /sys/firmware/efi/efivars && EFI=1 || EFI=0
+
+# sudo parted -s -a optimal -- /dev/sdX mkpart primary 1MiB -2048s
+# exit when any command fails
+set -e
+# keep track of the last executed command
+trap 'last_command=$current_command; current_command=$BASH_COMMAND' DEBUG
+# echo an error message before exiting
+trap 'echo "\"${last_command}\" command filed with exit code $?."' EXIT
+# exit_on_error() {
+#     exit_code=$1
+#     last_command=${@:2}
+#     if [ $exit_code -ne 0 ]; then
+#         >&2 echo "\"${last_command}\" command failed with exit code ${exit_code}."
+#         exit $exit_code
+#     fi
+# }
+# ls --fake-option
+# exit_on_error $? !!
+
+# enable !! command completion
+set -o history -o histexpand
+
 echo "Enter Username"
 read NAMEINPUT
 echo "Enter Hostname (Name of the Computer)"
@@ -11,11 +35,8 @@ read DISK
 
 timedatectl set-ntp true
 
-# Check if the system is booted as UEFI or Legacy BIOS
-ls /sys/firmware/efi/efivars && EFI=true || EFI=false
-
 echo "Partitioning Drive"
-if [ "$EFI" = true ]; then
+if [ $EFI == 1 ]; then
 	parted --script "${DISK}" \
 	mklabel gpt \
 	mkpart primary 512MiB -8GiB \
@@ -33,18 +54,18 @@ echo "Making Filesysten"
 mkfs.ext4 -L arch "${DISK}1"
 mkswap -L swap "${DISK}2"
 swapon "${DISK}2"
-if [ "$EFI" = true ]; then
+if [ $EFI == 1 ]; then
 	mkfs.fat -F 32 -n "UEFISYS" "${DISK}3"
 fi
 mount "${DISK}1" /mnt
-if [ "$EFI" = true ]; then
+if [ $EFI == 1 ]; then
 	mkdir -p /mnt/boot
 	mount "${DISK}3" /mnt/boot
 fi
 
 echo "Installing Kernel and Base Software"
 pacstrap /mnt linux linux-firmware grub base base-devel sudo neovim networkmanager --noconfirm --needed
-if [ "$EFI" = true ]; then
+if [ $EFI == 1 ]; then
 	pacstrap /mnt efibootmgr --noconfirm
 fi
 
@@ -88,7 +109,7 @@ EOF
 # correct grub configuration
 # EOF need to be not indented on end/closing line otherwise it causes error
 echo "Installing Grub"
-if [ "$EFI" = true ]; then
+if [ $EFI == 1 ]; then
 	cat << EOF | arch-chroot /mnt
 	grub-install --efi-directory=/boot
 EOF
