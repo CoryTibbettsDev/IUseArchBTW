@@ -10,19 +10,6 @@ set -e
 trap 'last_command=$current_command; current_command=$BASH_COMMAND' DEBUG
 # echo an error message before exiting
 trap 'echo "\"${last_command}\" command filed with exit code $?."' EXIT
-# exit_on_error() {
-#     exit_code=$1
-#     last_command=${@:2}
-#     if [ $exit_code -ne 0 ]; then
-#         >&2 echo "\"${last_command}\" command failed with exit code ${exit_code}."
-#         exit $exit_code
-#     fi
-# }
-# ls --fake-option
-# exit_on_error $? !!
-
-# enable !! command completion
-set -o history -o histexpand
 
 echo "Enter Username"
 read NAMEINPUT
