@@ -36,15 +36,15 @@ read DISK
 timedatectl set-ntp true
 
 echo "Partitioning Drive"
-if [ $EFI == 1 ]; then
-	parted --script "${DISK}" \
+if [ $EFI ]; then
+	parted -a optimal -s -- "${DISK}" \
 	mklabel gpt \
 	mkpart primary 512MiB -8GiB \
 	mkpart primary linux-swap -8GiB 100% \
 	mkpart ESP fat32 1MiB 512MiB \
 	set 3 esp on
 else
-	parted --script "${DISK}" \
+	parted -a optimal -s -- "${DISK}" \
 	mklabel msdos \
 	mkpart primary 1MiB -8GiB \
 	mkpart primary linux-swap -8GiB 100%
@@ -54,18 +54,18 @@ echo "Making Filesysten"
 mkfs.ext4 -L arch "${DISK}1"
 mkswap -L swap "${DISK}2"
 swapon "${DISK}2"
-if [ $EFI == 1 ]; then
+if [ $EFI ]; then
 	mkfs.fat -F 32 -n "UEFISYS" "${DISK}3"
 fi
 mount "${DISK}1" /mnt
-if [ $EFI == 1 ]; then
+if [ $EFI ]; then
 	mkdir -p /mnt/boot
 	mount "${DISK}3" /mnt/boot
 fi
 
 echo "Installing Kernel and Base Software"
 pacstrap /mnt linux linux-firmware grub base base-devel sudo neovim networkmanager --noconfirm --needed
-if [ $EFI == 1 ]; then
+if [ $EFI ]; then
 	pacstrap /mnt efibootmgr --noconfirm
 fi
 
@@ -109,7 +109,7 @@ EOF
 # correct grub configuration
 # EOF need to be not indented on end/closing line otherwise it causes error
 echo "Installing Grub"
-if [ $EFI == 1 ]; then
+if [ $EFI ]; then
 	cat << EOF | arch-chroot /mnt
 	grub-install --efi-directory=/boot
 EOF
@@ -122,3 +122,6 @@ grub-mkconfig -o /boot/grub/grub.cfg
 
 echo "All Done Hopefully It Works"
 echo "Remember to arch-chroot /mnt and set passwd for root and ${NAMEINPUT}"
+
+# sudo adduser myuser --gecos "First Last,RoomNumber,WorkPhone,HomePhone" --disabled-password
+# echo "myuser:password" | sudo chpasswd
