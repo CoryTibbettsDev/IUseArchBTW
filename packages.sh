@@ -49,6 +49,9 @@ PACKAGES=(
 	zathura-pdf-mupfd # PDF EPUB XPS support
 	# Auto mount external devices
 	udiskie
+	# Themes
+	# GTK
+	arc-solid-gtk-theme
 
 	#### VirtualBox ####
 	# virtualbox
@@ -56,9 +59,6 @@ PACKAGES=(
 	# virtualbox-host-modules-arch
 	## For other kernels
 	# virtualbox-host-dkms
-
-	#### Games ####
-	# wesnoth
 
 	#### DRIVERS ####
 	# https://github.com/lutris/docs/blob/master/InstallingDrivers.md

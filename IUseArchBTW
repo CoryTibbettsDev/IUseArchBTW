@@ -2,6 +2,7 @@
 
 # Check if the system is booted as UEFI or Legacy BIOS
 ls /sys/firmware/efi/efivars && EFI=1 || EFI=0
+printf "EFI variable is $EFI\n"
 
 # sudo parted -s -a optimal -- /dev/sdX mkpart primary 1MiB -2048s
 # exit when any command fails
@@ -110,5 +111,4 @@ grub-mkconfig -o /boot/grub/grub.cfg
 echo "All Done Hopefully It Works"
 echo "Remember to arch-chroot /mnt and set passwd for root and ${NAMEINPUT}"
 
-# sudo adduser myuser --gecos "First Last,RoomNumber,WorkPhone,HomePhone" --disabled-password
 # echo "myuser:password" | sudo chpasswd
