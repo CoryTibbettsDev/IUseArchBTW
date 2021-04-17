@@ -1,7 +1,8 @@
 #!/bin/sh
 
 # Check if the system is booted as UEFI or Legacy BIOS
-ls /sys/firmware/efi/efivars && EFI=1 || EFI=0
+# 0 is true 1 is false shell does what it wants
+ls /sys/firmware/efi/efivars && EFI=0 || EFI=1
 printf "EFI variable is $EFI\n"
 
 # sudo parted -s -a optimal -- /dev/sdX mkpart primary 1MiB -2048s
@@ -52,7 +53,7 @@ if [ $EFI ]; then
 fi
 
 echo "Installing Kernel and Base Software"
-pacstrap /mnt linux linux-firmware grub base base-devel sudo neovim networkmanager --noconfirm --needed
+pacstrap /mnt linux linux-firmware grub base base-devel sudo neovim networkmanager --noconfirm
 if [ $EFI ]; then
 	pacstrap /mnt efibootmgr --noconfirm
 fi
