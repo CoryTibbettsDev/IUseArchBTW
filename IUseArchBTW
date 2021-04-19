@@ -24,38 +24,45 @@ read DISK
 
 timedatectl set-ntp true
 
+PARTITION_PARTED_UEFI="mklabel gpt mkpart ESP fat32 1MiB 512MiB mkpart root $PARTITION_PARTED_FILE_SYSTEM_TYPE 512MiB 100% set 1 esp on"
+PARTITION_PARTED_BIOS="mklabel msdos mkpart primary ext4 4MiB 512MiB mkpart primary $PARTITION_PARTED_FILE_SYSTEM_TYPE 512MiB 100% set 1 boot on"
 echo "Partitioning Drive"
+# parted -a optimal
 if [ $EFI ]; then
 	parted -a optimal -s -- "${DISK}" \
 	mklabel gpt \
-	mkpart primary 512MiB -8GiB \
-	mkpart primary linux-swap -8GiB 100% \
 	mkpart ESP fat32 1MiB 512MiB \
-	set 3 esp on
+	mkpart root ext4 512MiB 100% \
+	set 1 esp on
 else
 	parted -a optimal -s -- "${DISK}" \
 	mklabel msdos \
-	mkpart primary 1MiB -8GiB \
-	mkpart primary linux-swap -8GiB 100%
+	mkpart primary 4MiB 512MiB \
+	mkpart primary ext4 512MiB 100% \
+	set 1 boot on
 fi
 
 echo "Making Filesysten"
-mkfs.ext4 -L arch "${DISK}1"
 mkswap -L swap "${DISK}2"
 swapon "${DISK}2"
+mkfs.ext4 -L arch "${DISK}3"
 if [ $EFI ]; then
-	mkfs.fat -F 32 -n "UEFISYS" "${DISK}3"
+	mkfs.fat -F 32 -n boot "${DISK}1"
 fi
-mount "${DISK}1" /mnt
+
 if [ $EFI ]; then
 	mkdir -p /mnt/boot
-	mount "${DISK}3" /mnt/boot
+	mount "${DISK}1" /mnt/boot
+else
+	mount "${DISK}1" /mnt
 fi
 
 echo "Installing Kernel and Base Software"
-pacstrap /mnt linux linux-firmware grub base base-devel sudo neovim networkmanager --noconfirm
+pacstrap /mnt linux linux-firmware base base-devel sudo neovim networkmanager --noconfirm
 if [ $EFI ]; then
 	pacstrap /mnt efibootmgr --noconfirm
+else
+	pacstrap /mnt grub --noconfirm
 fi
 
 echo "Generating fstab"
@@ -89,6 +96,9 @@ echo "update_config=1" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
 echo "Creating User"
 useradd --create-home --user-group "${NAMEINPUT}"
 
+echo "Changing User Password"
+echo "${NAMEINPUT}:${PASSWORDINPUT}" | chpasswd
+
 echo "Enabling Sudo for ${NAMEINPUT}"
 echo "%${NAMEINPUT} ALL=(ALL) ALL" | tee -a /etc/sudoers
 
@@ -110,6 +120,3 @@ fi
 grub-mkconfig -o /boot/grub/grub.cfg
 
 echo "All Done Hopefully It Works"
-echo "Remember to arch-chroot /mnt and set passwd for root and ${NAMEINPUT}"
-
-# echo "myuser:password" | sudo chpasswd
