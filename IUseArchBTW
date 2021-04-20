@@ -1,11 +1,9 @@
 #!/bin/sh
 
 # Check if the system is booted as UEFI or Legacy BIOS
-# 0 is true 1 is false shell does what it wants
-ls /sys/firmware/efi/efivars && EFI=0 || EFI=1
+ls /sys/firmware/efi/efivars && EFI=true || EFI=false
 printf "EFI variable is $EFI\n"
 
-# sudo parted -s -a optimal -- /dev/sdX mkpart primary 1MiB -2048s
 # exit when any command fails
 set -e
 # keep track of the last executed command
@@ -13,56 +11,60 @@ trap 'last_command=$current_command; current_command=$BASH_COMMAND' DEBUG
 # echo an error message before exiting
 trap 'echo "\"${last_command}\" command filed with exit code $?."' EXIT
 
-echo "Enter Username"
-read NAMEINPUT
-echo "Enter Hostname (Name of the Computer)"
-read HOSTINPUT
-
-lsblk
-echo "Enter disk (Example: /dev/sda)"
-read DISK
+# echo "Enter Hostname (Name of the Computer)"
+# read HOSTINPUT
+# echo "Enter Username"
+# read NAMEINPUT
+# echo "Enter Password"
+# read -s PASSWORDINPUT
+# 
+# lsblk
+# echo "Enter Disk (Example: /dev/sda)"
+# read DISKINPUT
+HOSTINPUT=archtest
+NAMEINPUT=testuser
+PASSWORDINPUT=as
+DISKINPUT=/dev/sda
 
 timedatectl set-ntp true
 
-PARTITION_PARTED_UEFI="mklabel gpt mkpart ESP fat32 1MiB 512MiB mkpart root $PARTITION_PARTED_FILE_SYSTEM_TYPE 512MiB 100% set 1 esp on"
-PARTITION_PARTED_BIOS="mklabel msdos mkpart primary ext4 4MiB 512MiB mkpart primary $PARTITION_PARTED_FILE_SYSTEM_TYPE 512MiB 100% set 1 boot on"
-echo "Partitioning Drive"
+printf "Partitioning Drive\n"
 # parted -a optimal
-if [ $EFI ]; then
-	parted -a optimal -s -- "${DISK}" \
+# sudo parted -s -a optimal -- /dev/sdX mkpart primary 1MiB -2048s
+if [ "$EFI"  == "true" ]; then
+	parted -s -- "${DISKINPUT}" \
 	mklabel gpt \
 	mkpart ESP fat32 1MiB 512MiB \
-	mkpart root ext4 512MiB 100% \
+	mkpart primary linux-swap -8GiB 100% \
+	mkpart primary ext4 512MiB 100% \
 	set 1 esp on
 else
-	parted -a optimal -s -- "${DISK}" \
+	parted -s -- "${DISKINPUT}" \
 	mklabel msdos \
-	mkpart primary 4MiB 512MiB \
-	mkpart primary ext4 512MiB 100% \
+	mkpart primary 0% 100%
 	set 1 boot on
 fi
 
 echo "Making Filesysten"
-mkswap -L swap "${DISK}2"
-swapon "${DISK}2"
-mkfs.ext4 -L arch "${DISK}3"
-if [ $EFI ]; then
-	mkfs.fat -F 32 -n boot "${DISK}1"
+if [ "$EFI"  == "true" ]; then
+	mkfs.fat -F 32 -n boot "${DISKINPUT}1"
 fi
+# echo "Making Swap"
+# mkswap -L swap "${DISKINPUT}2"
+# swapon "${DISKINPUT}2"
+mkfs.ext4 "${DISKINPUT}1"
 
-if [ $EFI ]; then
+if [ "$EFI"  == "true" ]; then
 	mkdir -p /mnt/boot
-	mount "${DISK}1" /mnt/boot
+	mount "${DISKINPUT}1" /mnt/boot
 else
-	mount "${DISK}1" /mnt
+	mount "${DISKINPUT}1" /mnt
 fi
 
 echo "Installing Kernel and Base Software"
-pacstrap /mnt linux linux-firmware base base-devel sudo neovim networkmanager --noconfirm
-if [ $EFI ]; then
+pacstrap /mnt linux linux-firmware grub base base-devel sudo neovim networkmanager --noconfirm
+if [ "$EFI"  == "true" ]; then
 	pacstrap /mnt efibootmgr --noconfirm
-else
-	pacstrap /mnt grub --noconfirm
 fi
 
 echo "Generating fstab"
@@ -72,7 +74,6 @@ echo "Chrooting"
 # Commands executed inside /mnt
 # This probably is not the best way to do this but I have not found another way
 cat << EOF | arch-chroot /mnt
-
 echo "Symlink Time"
 ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
 
@@ -101,22 +102,21 @@ echo "${NAMEINPUT}:${PASSWORDINPUT}" | chpasswd
 
 echo "Enabling Sudo for ${NAMEINPUT}"
 echo "%${NAMEINPUT} ALL=(ALL) ALL" | tee -a /etc/sudoers
-
 EOF
 
 # If statements are not read in EOF so we have to move outside to install
 # correct grub configuration
 # EOF need to be not indented on end/closing line otherwise it causes error
 echo "Installing Grub"
-if [ $EFI ]; then
+if [ "$EFI"  == "true" ]; then
 	cat << EOF | arch-chroot /mnt
 	grub-install --efi-directory=/boot
 EOF
 else
 	cat << EOF | arch-chroot /mnt
-	grub-install "${DISK}"
+	grub-install "${DISKINPUT}"
+	grub-mkconfig -o /boot/grub/grub.cfg
 EOF
 fi
-grub-mkconfig -o /boot/grub/grub.cfg
 
 echo "All Done Hopefully It Works"
