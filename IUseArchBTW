@@ -1,8 +1,9 @@
 #!/bin/sh
 
 # Check if the system is booted as UEFI or Legacy BIOS
-ls /sys/firmware/efi/efivars && EFI=true || EFI=false
-printf "EFI variable is $EFI\n"
+EFIPATH=/sys/firmware/efi/efivars
+
+EFIBOOTDIR=/mnt/boot/efi
 
 # exit when any command fails
 set -e
@@ -11,59 +12,53 @@ trap 'last_command=$current_command; current_command=$BASH_COMMAND' DEBUG
 # echo an error message before exiting
 trap 'echo "\"${last_command}\" command filed with exit code $?."' EXIT
 
-# echo "Enter Hostname (Name of the Computer)"
-# read HOSTINPUT
-# echo "Enter Username"
-# read NAMEINPUT
-# echo "Enter Password"
-# read -s PASSWORDINPUT
-# 
-# lsblk
-# echo "Enter Disk (Example: /dev/sda)"
-# read DISKINPUT
-HOSTINPUT=archtest
-NAMEINPUT=testuser
-PASSWORDINPUT=as
-DISKINPUT=/dev/sda
+echo "Enter Hostname (Name of the Computer)"
+read HOSTINPUT
+echo "Enter Username"
+read NAMEINPUT
+echo "Enter Password"
+read -s PASSWORDINPUT
+
+lsblk
+echo "Enter Disk (Example: /dev/sda)"
+read DISKINPUT
 
 timedatectl set-ntp true
 
 printf "Partitioning Drive\n"
 # parted -a optimal
 # sudo parted -s -a optimal -- /dev/sdX mkpart primary 1MiB -2048s
-if [ "$EFI"  == "true" ]; then
+if [ -d $EFIPATH ]; then
 	parted -s -- "${DISKINPUT}" \
 	mklabel gpt \
-	mkpart ESP fat32 1MiB 512MiB \
+	mkpart primary 512MiB -8GiB \
 	mkpart primary linux-swap -8GiB 100% \
-	mkpart primary ext4 512MiB 100% \
-	set 1 esp on
+	mkpart ESP fat32 1MiB 512MiB \
+	set 3 esp on
 else
 	parted -s -- "${DISKINPUT}" \
 	mklabel msdos \
-	mkpart primary 0% 100%
+	mkpart primary 1MiB -8GiB \
+	mkpart primary linux-swap -8GiB 100% \
 	set 1 boot on
 fi
 
 echo "Making Filesysten"
-if [ "$EFI"  == "true" ]; then
+mkfs.ext4 "${DISKINPUT}1"
+mkswap -L swap "${DISKINPUT}2"
+swapon "${DISKINPUT}2"
+if [ -d $EFIPATH ]; then
 	mkfs.fat -F 32 -n boot "${DISKINPUT}1"
 fi
-# echo "Making Swap"
-# mkswap -L swap "${DISKINPUT}2"
-# swapon "${DISKINPUT}2"
-mkfs.ext4 "${DISKINPUT}1"
-
-if [ "$EFI"  == "true" ]; then
-	mkdir -p /mnt/boot
-	mount "${DISKINPUT}1" /mnt/boot
-else
-	mount "${DISKINPUT}1" /mnt
+mount "${DISKINPUT}1" /mnt
+if [ -d $EFIPATH ]; then
+	mkdir -p ${EFIBOOTDIR}
+	mount "${DISKINPUT}3" ${EFIBOOTDIR}
 fi
 
 echo "Installing Kernel and Base Software"
-pacstrap /mnt linux linux-firmware grub base base-devel sudo neovim networkmanager --noconfirm
-if [ "$EFI"  == "true" ]; then
+pacstrap /mnt linux linux-firmware grub base sudo neovim networkmanager --noconfirm
+if [ -d $EFIPATH ]; then
 	pacstrap /mnt efibootmgr --noconfirm
 fi
 
@@ -108,9 +103,9 @@ EOF
 # correct grub configuration
 # EOF need to be not indented on end/closing line otherwise it causes error
 echo "Installing Grub"
-if [ "$EFI"  == "true" ]; then
+if [ -d $EFIPATH ]; then
 	cat << EOF | arch-chroot /mnt
-	grub-install --efi-directory=/boot
+	grub-install --efi-directory=${EFIBOOTDIR}
 EOF
 else
 	cat << EOF | arch-chroot /mnt
