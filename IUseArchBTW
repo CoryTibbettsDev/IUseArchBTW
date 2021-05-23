@@ -12,12 +12,9 @@ trap 'last_command=$current_command; current_command=$BASH_COMMAND' DEBUG
 # echo an error message before exiting
 trap 'echo "\"${last_command}\" command filed with exit code $?."' EXIT
 
-echo "Enter Hostname (Name of the Computer)"
-read HOSTINPUT
-echo "Enter Username"
-read NAMEINPUT
-echo "Enter Password"
-read -s PASSWORDINPUT
+read -p "Enter Hostname (Name of the Computer): " HOSTINPUT
+read -p "Enter Username: " NAMEINPUT
+read -p "Enter Password: " -s PASSWORDINPUT
 
 lsblk
 echo "Enter Disk (Example: /dev/sda)"
