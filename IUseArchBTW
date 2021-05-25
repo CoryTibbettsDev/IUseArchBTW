@@ -1,16 +1,22 @@
 #!/bin/sh
 
-# Check if the system is booted as UEFI or Legacy BIOS
+# Path to check if the system is booted as UEFI or Legacy BIOS
 EFIPATH=/sys/firmware/efi/efivars
-
+# Directory to mount EFI boot data
 EFIBOOTDIR=/mnt/boot/efi
 
 # exit when any command fails
 set -e
 # keep track of the last executed command
-trap 'last_command=$current_command; current_command=$BASH_COMMAND' DEBUG
+trap 'LAST_COMMAND=$CURRENT_COMMAND; CURRENT_COMMAND=$BASH_COMMAND' DEBUG
 # echo an error message before exiting
-trap 'echo "\"${last_command}\" command filed with exit code $?."' EXIT
+trap 'echo "\"${LAST_COMMAND}\" command filed with exit code $?."' EXIT
+
+# Preset variables for testing
+# HOSTINPUT=arch
+# NAMEINPUT=user
+# PASSWORDINPUT=test
+# DISKINPUT=/dev/sda
 
 read -p "Enter Hostname (Name of the Computer): " HOSTINPUT
 read -p "Enter Username: " NAMEINPUT
@@ -22,7 +28,7 @@ read DISKINPUT
 
 timedatectl set-ntp true
 
-printf "Partitioning Drive\n"
+echo "Partitioning Drive"
 # parted -a optimal
 # sudo parted -s -a optimal -- /dev/sdX mkpart primary 1MiB -2048s
 if [ -d $EFIPATH ]; then
@@ -45,7 +51,7 @@ mkfs.ext4 "${DISKINPUT}1"
 mkswap -L swap "${DISKINPUT}2"
 swapon "${DISKINPUT}2"
 if [ -d $EFIPATH ]; then
-	mkfs.fat -F 32 -n boot "${DISKINPUT}1"
+	mkfs.fat -F 32 -n boot "${DISKINPUT}3"
 fi
 mount "${DISKINPUT}1" /mnt
 if [ -d $EFIPATH ]; then
@@ -64,7 +70,7 @@ genfstab -U /mnt | tee -a /mnt/etc/fstab
 
 echo "Chrooting"
 # Commands executed inside /mnt
-# This probably is not the best way to do this but I have not found another way
+# This probably is not the most elegant way but I haven't found anything nicer
 cat << EOF | arch-chroot /mnt
 echo "Symlink Time"
 ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
