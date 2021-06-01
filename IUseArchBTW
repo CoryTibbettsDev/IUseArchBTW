@@ -23,8 +23,7 @@ read -p "Enter Username: " NAMEINPUT
 read -p "Enter Password: " -s PASSWORDINPUT
 
 lsblk
-echo "Enter Disk (Example: /dev/sda)"
-read DISKINPUT
+read -p "Enter Disk (Example: /dev/sda): " DISKINPUT
 
 timedatectl set-ntp true
 
@@ -104,7 +103,7 @@ EOF
 
 # If statements are not read in EOF so we have to move outside to install
 # correct grub configuration
-# EOF need to be not indented on end/closing line otherwise it causes error
+# EOF needs to not be indented on end/closing line otherwise it causes error
 echo "Installing Grub"
 if [ -d $EFIPATH ]; then
 	cat << EOF | arch-chroot /mnt

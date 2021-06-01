@@ -1,5 +1,4 @@
 # IUseArchBTW
-**CAUTION: This script is still a work in progress I would not recommend this for daily use yet**<br  />
 **CAUTION: This installation script will partition your drives deleting anything on them**<br  />
 **Note: Sometimes on installation the NetworkManager command will fail and say it's not working but it actually does on reboot**<br  />
 **Also I Use Arch BTW**<br  />
