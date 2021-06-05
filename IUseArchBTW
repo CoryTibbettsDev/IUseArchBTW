@@ -1,5 +1,11 @@
 #!/bin/sh
 
+# Preset variables for testing
+# HOSTINPUT=arch
+# NAMEINPUT=user
+# PASSWORDINPUT=test
+# DISKINPUT=/dev/sda
+
 # Path to check if the system is booted as UEFI or Legacy BIOS
 EFIPATH=/sys/firmware/efi/efivars
 # Directory to mount EFI boot data
@@ -11,12 +17,6 @@ set -e
 trap 'LAST_COMMAND=$CURRENT_COMMAND; CURRENT_COMMAND=$BASH_COMMAND' DEBUG
 # echo an error message before exiting
 trap 'echo "\"${LAST_COMMAND}\" command filed with exit code $?."' EXIT
-
-# Preset variables for testing
-# HOSTINPUT=arch
-# NAMEINPUT=user
-# PASSWORDINPUT=test
-# DISKINPUT=/dev/sda
 
 read -p "Enter Hostname (Name of the Computer): " HOSTINPUT
 read -p "Enter Username: " NAMEINPUT
@@ -98,7 +98,7 @@ echo "Changing User Password"
 echo "${NAMEINPUT}:${PASSWORDINPUT}" | chpasswd
 
 echo "Enabling Sudo for ${NAMEINPUT}"
-echo "%${NAMEINPUT} ALL=(ALL) ALL" | tee -a /etc/sudoers
+echo "${NAMEINPUT} ALL=(ALL) ALL" | tee -a /etc/sudoers
 EOF
 
 # If statements are not read in EOF so we have to move outside to install
