@@ -1,119 +1,131 @@
 #!/bin/sh
 
-# Preset variables for testing
-# HOSTINPUT=arch
-# NAMEINPUT=user
-# PASSWORDINPUT=test
-# DISKINPUT=/dev/sda
+# IUseArchBTW
+
+# Enable debugging and testing
+# Example: sh IUseArchBTW debug
+debug=
+if [ "${1}" = d -o "${1}" = debug ]; then
+	debug="true"
+fi
+
+if [ "${debug}" = true ]; then
+	# Preset variables for testing
+	host_input="arch"
+	name_input="test"
+	password_input="test"
+	disk_input="/dev/sda"
+fi
 
 # Path to check if the system is booted as UEFI or Legacy BIOS
-EFIPATH=/sys/firmware/efi/efivars
+efi_path="/sys/firmware/efi/efivars"
 # Directory to mount EFI boot data
-EFIBOOTDIR=/mnt/boot/efi
+efi_boot_dir="/mnt/boot/efi"
 
-# exit when any command fails
-set -e
-# keep track of the last executed command
-trap 'LAST_COMMAND=$CURRENT_COMMAND; CURRENT_COMMAND=$BASH_COMMAND' DEBUG
-# echo an error message before exiting
-trap 'echo "\"${LAST_COMMAND}\" command filed with exit code $?."' EXIT
+if [ ! "${debug}" = true ]; then
+	# Exit when any command fails
+	set -e
+	# Keep track of the last executed command
+	trap 'last_command=$current_command; current_command=$BASH_COMMAND' DEBUG
+	# echo an error message before exiting
+	trap 'printf "\"%s\" command filed with exit code $?.\n" "${last_command"' EXIT
 
-read -p "Enter Hostname (Name of the Computer): " HOSTINPUT
-read -p "Enter Username: " NAMEINPUT
-read -p "Enter Password: " -s PASSWORDINPUT
-
-lsblk
-read -p "Enter Disk (Example: /dev/sda): " DISKINPUT
+	read -p "Enter Hostname (Name of the Computer): " host_input
+	read -p "Enter Username: " name_input
+	read -p "Enter Password: " -s password_input
+	lsblk
+	read -p "Enter Disk (Example: /dev/sda): " disk_input
+fi
 
 timedatectl set-ntp true
 
-echo "Partitioning Drive"
-# parted -a optimal
-# sudo parted -s -a optimal -- /dev/sdX mkpart primary 1MiB -2048s
-if [ -d $EFIPATH ]; then
-	parted -s -- "${DISKINPUT}" \
+printf "Partitioning Drive\n"
+if [ -d ${efi_path} ]; then
+	parted -s -- "${disk_input}" \
 	mklabel gpt \
 	mkpart primary 512MiB -8GiB \
 	mkpart primary linux-swap -8GiB 100% \
 	mkpart ESP fat32 1MiB 512MiB \
 	set 3 esp on
 else
-	parted -s -- "${DISKINPUT}" \
+	parted -s -- "${disk_input}" \
 	mklabel msdos \
 	mkpart primary 1MiB -8GiB \
 	mkpart primary linux-swap -8GiB 100% \
 	set 1 boot on
 fi
 
-echo "Making Filesysten"
-mkfs.ext4 "${DISKINPUT}1"
-mkswap -L swap "${DISKINPUT}2"
-swapon "${DISKINPUT}2"
-if [ -d $EFIPATH ]; then
-	mkfs.fat -F 32 -n boot "${DISKINPUT}3"
+printf "Making Filesysten\n"
+mkfs.ext4 "${disk_input}1"
+mkswap -L swap "${disk_input}2"
+swapon "${disk_input}2"
+if [ -d ${efi_path} ]; then
+	mkfs.fat -F 32 -n boot "${disk_input}3"
 fi
-mount "${DISKINPUT}1" /mnt
-if [ -d $EFIPATH ]; then
-	mkdir -p ${EFIBOOTDIR}
-	mount "${DISKINPUT}3" ${EFIBOOTDIR}
+mount "${disk_input}1" /mnt
+if [ -d ${efi_path} ]; then
+	mkdir -p ${efi_boot_dir}
+	mount "${disk_input}3" ${efi_boot_dir}
 fi
 
-echo "Installing Kernel and Base Software"
+printf "Installing Kernel and Base Software\n"
 pacstrap /mnt linux linux-firmware grub base sudo neovim networkmanager --noconfirm
-if [ -d $EFIPATH ]; then
+if [ -d ${efi_path} ]; then
 	pacstrap /mnt efibootmgr --noconfirm
 fi
 
-echo "Generating fstab"
+printf "Generating fstab\n"
 genfstab -U /mnt | tee -a /mnt/etc/fstab
 
-echo "Chrooting"
+printf "Chrooting\n"
 # Commands executed inside /mnt
 # This probably is not the most elegant way but I haven't found anything nicer
 cat << EOF | arch-chroot /mnt
-echo "Symlink Time"
+printf "Symlink Time\n"
 ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
 
-echo "Hardware Clock"
+printf "Hardware Clock\n"
 hwclock --systohc
 
-echo "Generating Locale"
-echo "en_US.UTF-8 UTF-8" | tee -a /etc/locale.gen
+printf "Generating Locale\n"
+printf "en_US.UTF-8 UTF-8\n" | tee -a /etc/locale.gen
 locale-gen
-echo "LANG=en_US.UTF-8" | tee -a /etc/locale.conf
+printf "LANG=en_US.UTF-8\n" | tee -a /etc/locale.conf
 
-echo "Setting Hostname"
-echo "${HOSTINPUT}" | tee -a /etc/hostname
+printf "Setting Hostname\n"
+printf "${host_input}" | tee -a /etc/hostname
 
-echo "NetworkManager"
-systemctl enable --now NetworkManager && echo "NetworkManager Working" || echo "NetworkManager not working"
+printf "NetworkManager\n"
+systemctl enable --now NetworkManager &&
+	printf "NetworkManager Working\n" ||
+	printf "NetworkManager not working\n"
 
-echo "ctrl_interface=/run/wpa_supplicant" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
-echo "update_config=1" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
+printf "ctrl_interface=/run/wpa_supplicant\n" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
+printf "update_config=1\n" | tee -a /etc/wpa_supplicant/wpa_supplicant.conf
 
-echo "Creating User"
-useradd --create-home --user-group "${NAMEINPUT}"
+printf "Creating User\n"
+useradd --create-home --user-group "${name_input}"
 
-echo "Changing User Password"
-echo "${NAMEINPUT}:${PASSWORDINPUT}" | chpasswd
+printf "Changing User Password\n"
+printf "${name_input}:${password_input}" | chpasswd
 
-echo "Enabling Sudo for ${NAMEINPUT}"
-echo "${NAMEINPUT} ALL=(ALL) ALL" | tee -a /etc/sudoers
+printf "Enabling Sudo for ${name_input}\n"
+printf "${name_input} ALL=(ALL) ALL\n" | tee -a /etc/sudoers
 EOF
 
 # If statements are not read in EOF so we have to move outside to install
 # correct grub configuration
 # EOF needs to not be indented on end/closing line otherwise it causes error
-echo "Installing Grub"
-if [ -d $EFIPATH ]; then
+printf "Installing Grub\n"
+if [ -d ${efi_path} ]; then
 	cat << EOF | arch-chroot /mnt
-	grub-install --efi-directory=${EFIBOOTDIR}
+	grub-install --efi-directory=${efi_boot_dir}
 EOF
 else
 	cat << EOF | arch-chroot /mnt
-	grub-install "${DISKINPUT}"
+	grub-install "${disk_input}"
 	grub-mkconfig -o /boot/grub/grub.cfg
 EOF
 fi
 
-echo "All Done Hopefully It Works"
+printf "All Done Hopefully It Works\n"
