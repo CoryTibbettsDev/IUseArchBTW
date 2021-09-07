@@ -14,13 +14,9 @@ efi_path="/sys/firmware/efi/efivars"
 # Directory to mount EFI boot data
 efi_boot_dir="/mnt/boot/efi"
 
-# Exit when any command fails
-# set -e
-# Save the last exit code in s variable
-# trap 's=$?; printf "%s: Error on line %s: command filed with exit code %s.\n" "$0" "$LINENO" "$s"' EXIT
 # Redirect output to log files
-# exec > "out.log"
-# exec 2> "err.log"
+exec 1> >(tee "out.log")
+exec 2> >(tee "err.log")
 
 if [ "${debug}" = true ]; then
 	# Preset variables for testing
@@ -38,7 +34,7 @@ fi
 
 timedatectl set-ntp true
 
-boot_start_num=1
+boot_start_num="1"
 boot_start="${boot_start_num}MiB"
 boot_end_num="$(( ${boot_start_num} + 128 ))"
 boot_end="${boot_end_num}MiB"
@@ -49,24 +45,24 @@ root_part=
 boot_part=
 swap_part=
 
-if [ -d ${efi_path} ]; then
-	parted --script ${disk_input} -- mklabel gpt \
-	mkpart ESP fat32 ${boot_start} ${boot_end} \
-	mkpart primary linux-swap ${boot_end} ${swap_end} \
-	mkpart primary ext4 ${swap_end} 100% \
+if [ -d "${efi_path}" ]; then
+	parted --script "${disk_input}" -- mklabel gpt \
+	mkpart ESP fat32 "${boot_start}" "${boot_end}" \
+	mkpart primary linux-swap "${boot_end}" "${swap_end}" \
+	mkpart primary ext4 "${swap_end}" 100% \
 	set 1 esp on
 	boot_part="${disk_input}1"
 	swap_part="${disk_input}2"
 	root_part="${disk_input}3"
 else
-	parted --script ${disk_input} -- mklabel msdos \
-	mkpart primary linux-swap ${boot_end} ${swap_end} \
-	mkpart primary ext4 ${swap_end} 100% \
+	parted --script "${disk_input}" -- mklabel msdos \
+	mkpart primary linux-swap "${boot_end}" "${swap_end}" \
+	mkpart primary ext4 "${swap_end}" 100% \
 	set 2 boot on
 	swap_part="${disk_input}1"
 	root_part="${disk_input}2"
 fi
-parted --script ${disk_input} -- set ${boot_num} boot on
+parted --script "${disk_input}" -- set "${boot_num}" boot on
 
 mkfs.ext4 "${root_part}"
 mount "${root_part}" /mnt
@@ -74,14 +70,14 @@ mount "${root_part}" /mnt
 mkswap -L swap "${swap_part}"
 swapon "${swap_part}"
 
-if [ -d ${efi_path} ]; then
+if [ -d "${efi_path}" ]; then
 	mkfs.fat -F 32 -n boot "${boot_part}"
-	mkdir -p ${efi_boot_dir}
-	mount "${boot_part}" ${efi_boot_dir}
+	mkdir -p "${efi_boot_dir}"
+	mount "${boot_part}" "${efi_boot_dir}"
 fi
 
 pacstrap /mnt linux linux-firmware base sudo vi networkmanager --noconfirm
-if [ -d ${efi_path} ]; then
+if [ -d "${efi_path}" ]; then
 	pacstrap /mnt efibootmgr --noconfirm
 else
 	pacstrap /mnt grub --noconfirm
@@ -105,7 +101,7 @@ printf "${name_input} ALL=(ALL) ALL\n" | tee -a /mnt/etc/sudoers
 
 arch-chroot /mnt systemctl enable --now NetworkManager
 
-if [ -d ${efi_path} ]; then
+if [ -d "${efi_path}" ]; then
 	arch-chroot /mnt bootctl install
 else
 	arch-chroot /mnt grub-install "${disk_input}"
