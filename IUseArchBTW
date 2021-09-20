@@ -4,21 +4,24 @@
 
 # Enable debugging and testing
 # Example: sh IUseArchBTW debug
-debug=
-if [ "${1}" = d -o "${1}" = debug ]; then
-	debug="true"
+debug=0
+if [ "${1}" = "d" -o "${1}" = "debug" ]; then
+	debug=1
 fi
 
+mnt_dir="/mnt"
 # Path to check if the system is booted as UEFI or Legacy BIOS
 efi_path="/sys/firmware/efi/efivars"
 # Directory to mount EFI boot data
-efi_boot_dir="/mnt/boot/efi"
+efi_boot_dir="${mnt_dir}/boot/efi"
+efi=0
+[ -d "${efi_path}" ] && efi=1
 
 # Redirect output to log files
 exec 1> >(tee "out.log")
 exec 2> >(tee "err.log")
 
-if [ "${debug}" = true ]; then
+if [ "${debug}" -eq 1 ]; then
 	# Preset variables for testing
 	host_input="arch"
 	name_input="test"
@@ -34,18 +37,18 @@ fi
 
 timedatectl set-ntp true
 
-boot_start_num="1"
+boot_start_num=1
 boot_start="${boot_start_num}MiB"
-boot_end_num="$(( ${boot_start_num} + 128 ))"
+boot_end_num=$(( ${boot_start_num} + 128 ))
 boot_end="${boot_end_num}MiB"
-swap_end_num="$(( ${boot_end_num} + 8 ))"
+swap_end_num=$(( ${boot_end_num} + 8 ))
 swap_end="${swap_end_num}MiB"
 
 root_part=
 boot_part=
 swap_part=
 
-if [ -d "${efi_path}" ]; then
+if [ "${efi}" -eq 1 ]; then
 	parted --script "${disk_input}" -- mklabel gpt \
 	mkpart ESP fat32 "${boot_start}" "${boot_end}" \
 	mkpart primary linux-swap "${boot_end}" "${swap_end}" \
@@ -62,50 +65,103 @@ else
 	swap_part="${disk_input}1"
 	root_part="${disk_input}2"
 fi
-parted --script "${disk_input}" -- set "${boot_num}" boot on
 
 mkfs.ext4 "${root_part}"
-mount "${root_part}" /mnt
+mount "${root_part}" "${mnt_dir}"
 
 mkswap -L swap "${swap_part}"
 swapon "${swap_part}"
 
-if [ -d "${efi_path}" ]; then
+if [ "${efi}" -eq 1 ]; then
 	mkfs.fat -F 32 -n boot "${boot_part}"
 	mkdir -p "${efi_boot_dir}"
 	mount "${boot_part}" "${efi_boot_dir}"
 fi
 
-pacstrap /mnt linux linux-firmware base sudo vi networkmanager --noconfirm
-if [ -d "${efi_path}" ]; then
-	pacstrap /mnt efibootmgr --noconfirm
+pacstrap "${mnt_dir}" linux linux-firmware base sudo vi networkmanager --noconfirm
+if [ "${efi}" -eq 1 ]; then
+	pacstrap "${mnt_dir}" efibootmgr --noconfirm
 else
-	pacstrap /mnt grub --noconfirm
+	pacstrap "${mnt_dir}" grub --noconfirm
 fi
 
-genfstab -U /mnt | tee -a /mnt/etc/fstab
+genfstab -U "${mnt_dir}" | tee "${mnt_dir}/etc/fstab"
 
-arch-chroot /mnt ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
-arch-chroot /mnt hwclock --systohc
+arch-chroot "${mnt_dir}" ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
+arch-chroot "${mnt_dir}" hwclock --systohc
 
-printf "en_US.UTF-8 UTF-8\n" | tee -a /mnt/etc/locale.gen
-arch-chroot /mnt locale-gen
-printf "LANG=en_US.UTF-8\n" | tee -a /mnt/etc/locale.conf
+printf "en_US.UTF-8 UTF-8\n" | tee -a "${mnt_dir}/etc/locale.gen"
+arch-chroot "${mnt_dir}" locale-gen
+printf "LANG=en_US.UTF-8\n" | tee "${mnt_dir}/etc/locale.conf"
 
-printf "${host_input}\n" | tee /mnt/etc/hostname
+printf "%s\n" "${host_input}" | tee "${mnt_dir}/etc/hostname"
 
-arch-chroot /mnt useradd --create-home --user-group "${name_input}"
-printf "${name_input}:${password_input}" | chpasswd --root /mnt
+arch-chroot "${mnt_dir}" useradd --create-home --user-group "${name_input}"
+printf "%s:%s" "${name_input}" "${password_input}" | chpasswd --root "${mnt_dir}"
 
-printf "${name_input} ALL=(ALL) ALL\n" | tee -a /mnt/etc/sudoers
+printf "%s ALL=(ALL) ALL\n" "${name_input}" | tee -a "${mnt_dir}/etc/sudoers"
 
-arch-chroot /mnt systemctl enable --now NetworkManager
+arch-chroot "${mnt_dir}" systemctl enable --now NetworkManager
 
-if [ -d "${efi_path}" ]; then
-	arch-chroot /mnt bootctl install
+# iptables Firewall
+cat <<EOF > "${mnt_dir}/etc/iptables/iptables.rules"
+# iptables base configuration
+# Allow outgoing connections and deny all incoming connections
+*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+-A INPUT -p icmp -j ACCEPT
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp -j REJECT --reject-with tcp-reset
+-A INPUT -p udp -j REJECT --reject-with icmp-port-unreachable
+-A INPUT -j REJECT --reject-with icmp-proto-unreachable
+COMMIT
+EOF
+
+cat <<EOF > "${mnt_dir}/etc/iptables/ip6tables.rules"
+# ip6tables base configuration
+# Deny everything
+*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT DROP [0:0]
+COMMIT
+
+*raw
+:PREROUTING DROP [0:0]
+:OUTPUT DROP [0:0]
+COMMIT
+
+*nat
+:PREROUTING DROP [0:0]
+:INPUT DROP [0:0]
+:OUTPUT DROP [0:0]
+:POSTROUTING DROP [0:0]
+COMMIT
+
+*security
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT DROP [0:0]
+COMMIT
+
+*mangle
+:PREROUTING DROP [0:0]
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT DROP [0:0]
+:POSTROUTING DROP [0:0]
+COMMIT
+EOF
+systemctl enable --now iptables
+
+if [ "${efi}" -eq 1 ]; then
+	arch-chroot "${mnt_dir}" bootctl install
 else
-	arch-chroot /mnt grub-install "${disk_input}"
-	arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
+	arch-chroot "${mnt_dir}" grub-install "${disk_input}"
+	arch-chroot "${mnt_dir}" grub-mkconfig -o /boot/grub/grub.cfg
 fi
 
 printf "All Done Hopefully It Works\n"
