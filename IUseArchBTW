@@ -5,15 +5,16 @@
 # Enable debugging and testing
 # Example: sh IUseArchBTW debug
 debug=0
-if [ "${1}" = "d" -o "${1}" = "debug" ]; then
+if [ "${1}" = "d" ] || [ "${1}" = "debug" ]; then
 	debug=1
+	set -x
 fi
 
 mnt_dir="/mnt"
-# Path to check if the system is booted as UEFI or Legacy BIOS
+boot_dir="${mnt_dir}/boot"
+# Path to check if the system is booted as UEFI or BIOS
 efi_path="/sys/firmware/efi/efivars"
 # Directory to mount EFI boot data
-efi_boot_dir="${mnt_dir}/boot/efi"
 efi=0
 [ -d "${efi_path}" ] && efi=1
 
@@ -21,90 +22,225 @@ efi=0
 exec 1> >(tee "out.log")
 exec 2> >(tee "err.log")
 
+# Test for our init system and distrobution
+if type "systemctl" > /dev/null 2>&1; then
+	# Assume it is arch if we have systemd
+	os="arch"
+	init="systemd"
+else
+	# Assume it is artix if we have another init system
+	os="artix"
+	if type "rc-update" > /dev/null 2>&1; then
+		init="openrc"
+	elif type "sv" > /dev/null 2>&1; then
+		init="runit"
+	elif type "s6-rc" > /dev/null 2>&1; then
+		init="s6"
+	elif type "66-tree" > /dev/null 2>&1; then
+		init="suite66"
+	else
+		printf "Unsupported or unknown init system\n" 1>&2
+		exit 1
+	fi
+fi
+
+# Set os specific variables
+# Using eval "${chroot_cmd}" is not a perfect solution but I explicitly control
+# the variables so there shouldn't be any errors and the only other option I
+# know is to completely rewrite every command with arch-chroot and artix-chroot_cmd
+# which would be extremely redudant and nightmarish to change
+if [ "${os}" = arch ]; then
+	su_cmd="sudo"
+	chroot_cmd="arch-chroot"
+elif [ "${os}" = artix ]; then
+	su_cmd="doas"
+	chroot_cmd="artix-chroot"
+	# Artix does not come with parted on it's iso so we have to install it
+	pacman -Sy parted
+else
+	printf "Unknown os: %s\n" "${os}" 1>&2
+	exit 1
+fi
+
+get_password() {
+	printf "Enter Password: "
+	stty -echo
+	read -r password_input
+	stty echo
+	printf "\nEnter Password Again: "
+	stty -echo
+	read -r password_input_again
+	stty echo
+	printf "\n"
+
+	if [ "${password_input}" = "${password_input_again}" ]; then
+		return 0
+	else
+		printf "\nPasswords do not match please try again.\n"
+		get_password
+	fi
+}
+
+# Print os and init information so user can cancel if they want
+printf "Detected operarting system is: %s\n" "${os}"
+printf "Detected init system is: %s\n" "${init}"
+
+language="en_US.UTF-8"
+
 if [ "${debug}" -eq 1 ]; then
 	# Preset variables for testing
-	host_input="arch"
+	host_input="IUseArchBTW"
 	name_input="test"
 	password_input="test"
 	disk_input="/dev/sda"
 else
-	read -p "Enter Hostname (Name of the Computer): " host_input
-	read -p "Enter Username: " name_input
-	read -p "Enter Password: " -s password_input
+	printf "Enter Hostname (Name of the Computer): "
+	read host_input
+	printf "\nEnter Username: "
+	read name_input
+	get_password
 	lsblk
-	read -p "Enter Disk (Example: /dev/sda): " disk_input
+	printf "\nEnter Disk (Example: /dev/sda): "
+	read disk_input
 fi
 
-timedatectl set-ntp true
+if [ "${os}" = arch ]; then
+	timedatectl set-ntp true
+fi
 
+# Partitioning (It's annoying)
 boot_start_num=1
 boot_start="${boot_start_num}MiB"
-boot_end_num=$(( ${boot_start_num} + 128 ))
+if [ "${efi}" -eq 1 ]; then
+	boot_end_num=$(( ${boot_start_num} + 550 ))
+else
+	boot_end_num=$(( ${boot_start_num} + 5 ))
+fi
 boot_end="${boot_end_num}MiB"
-swap_end_num=$(( ${boot_end_num} + 8 ))
+# 8192MiB = 8GiB (I Think)
+swap_end_num=$(( ${boot_end_num} + 8192 ))
 swap_end="${swap_end_num}MiB"
-
-root_part=
-boot_part=
-swap_part=
 
 if [ "${efi}" -eq 1 ]; then
 	parted --script "${disk_input}" -- mklabel gpt \
 	mkpart ESP fat32 "${boot_start}" "${boot_end}" \
 	mkpart primary linux-swap "${boot_end}" "${swap_end}" \
 	mkpart primary ext4 "${swap_end}" 100% \
-	set 1 esp on
-	boot_part="${disk_input}1"
-	swap_part="${disk_input}2"
-	root_part="${disk_input}3"
+	set 1 boot on || printf "PARTITIONING FAILED\n" 1>&2
 else
 	parted --script "${disk_input}" -- mklabel msdos \
+	mkpart primary ext4 "${boot_start}" "${boot_end}" \
 	mkpart primary linux-swap "${boot_end}" "${swap_end}" \
 	mkpart primary ext4 "${swap_end}" 100% \
-	set 2 boot on
-	swap_part="${disk_input}1"
-	root_part="${disk_input}2"
+	set 1 boot on || printf "PARTITIONING FAILED\n" 1>&2
 fi
 
-mkfs.ext4 "${root_part}"
-mount "${root_part}" "${mnt_dir}"
+boot_part="${disk_input}1"
+swap_part="${disk_input}2"
+root_part="${disk_input}3"
 
-mkswap -L swap "${swap_part}"
-swapon "${swap_part}"
+# Make filesystems
+# Set labels so we can use /dev/disk/by-label later
+mkfs.ext4 -L ROOT "${root_part}"
+mkswap -L SWAP "${swap_part}"
 
 if [ "${efi}" -eq 1 ]; then
 	mkfs.fat -F 32 -n boot "${boot_part}"
-	mkdir -p "${efi_boot_dir}"
-	mount "${boot_part}" "${efi_boot_dir}"
-fi
-
-pacstrap "${mnt_dir}" linux linux-firmware base sudo vi networkmanager --noconfirm
-if [ "${efi}" -eq 1 ]; then
-	pacstrap "${mnt_dir}" efibootmgr --noconfirm
+	fatlabel "${boot_part}" BOOT
 else
-	pacstrap "${mnt_dir}" grub --noconfirm
+	mkfs.ext4 -L BOOT "${boot_part}"
 fi
 
-genfstab -U "${mnt_dir}" | tee "${mnt_dir}/etc/fstab"
+# Mount partitions
+mkdir -p "${boot_dir}"
+mount /dev/disk/by-label/BOOT "${boot_dir}"
+swapon /dev/disk/by-label/SWAP "${mnt_dir}"
+mount /dev/disk/by-label/ROOT "${mnt_dir}"
 
-arch-chroot "${mnt_dir}" ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
-arch-chroot "${mnt_dir}" hwclock --systohc
+# Install base system
+if [ "${os}" = arch ]; then
+	pacstrap "${mnt_dir}" linux linux-firmware base vi sudo networkmanager grub --noconfirm
+	if [ "${efi}" -eq 1 ]; then
+		pacstrap "${mnt_dir}" efibootmgr --noconfirm
+	fi
+elif [ "${os}" = artix ]; then
+	basestrap "${mnt_dir}" linux linux-firmware base base-devel vi doas grub --noconfirm
+	if [ "${init}" = openrc ]; then
+		basestrap "${mnt_dir}" openrc elogind-openrc networkmanager-openrc --noconfirm
+	elif [ "${init}" = runit ]; then
+		basestrap "${mnt_dir}" runit elogind-runit networkmanager-runit --noconfirm
+	elif [ "${init}" = s6 ]; then
+		basestrap "${mnt_dir}" s6-base elogind-s6 networkmanager-s6 --noconfirm
+	elif [ "${init}" = suite66 ]; then
+		basestrap "${mnt_dir}" suite66-base elogind-suite66 networkmanager-suite66 --noconfirm
+	fi
+	if [ "${efi}" -eq 1 ]; then
+		basestrap "${mnt_dir}" efibootmgr --noconfirm
+	fi
+fi
 
-printf "en_US.UTF-8 UTF-8\n" | tee -a "${mnt_dir}/etc/locale.gen"
-arch-chroot "${mnt_dir}" locale-gen
-printf "LANG=en_US.UTF-8\n" | tee "${mnt_dir}/etc/locale.conf"
+# Generate fstab
+if [ "${os}" = arch ]; then
+	genfstab -U "${mnt_dir}" | tee "${mnt_dir}/etc/fstab"
+elif [ "${os}" = artix ]; then
+	fstabgen -U "${mnt_dir}" | tee "${mnt_dir}/etc/fstab"
+fi
 
+# Setup hostname
 printf "%s\n" "${host_input}" | tee "${mnt_dir}/etc/hostname"
+cat <<EOF | tee "${mnt_dir}/etc/hosts"
+127.0.0.1 localhost
+::1       localhost
+127.0.1.1 ${host_input}.localdomain ${host_input}
+EOF
 
-arch-chroot "${mnt_dir}" useradd --create-home --user-group "${name_input}"
+# Set time zone
+eval "${chroot_cmd}" "${mnt_dir}" ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
+# Run hwclock to generate /etc/adjtime
+eval "${chroot_cmd}" "${mnt_dir}" hwclock --systohc
+
+# Locale and Keyboard
+printf "%s UTF-8\n" "${language}" | tee -a "${mnt_dir}/etc/locale.gen"
+eval "${chroot_cmd}" "${mnt_dir}" locale-gen
+cat <<EOF | tee "${mnt_dir}/etc/locale.conf"
+export LANG="${language}"
+export LC_COLLATE="C"
+EOF
+
+if [ "${os}" = artix ]; then
+cat <<EOF | tee "${mnt_dir}/etc/conf.d/keymaps"
+LANG=${language}
+LC_CTYPE="${language}"
+LC_NUMERIC="${language}"
+LC_TIME="${language}"
+LC_COLLATE="${language}"
+LC_MONETARY="${language}"
+LC_MESSAGES="${language}"
+LC_PAPER="${language}"
+LC_NAME="${language}"
+LC_ADDRESS="${language}"
+LC_TELEPHONE="${language}"
+LC_MEASUREMENT="${language}"
+LC_IDENTIFICATION="${language}"
+LC_ALL=
+EOF
+fi
+
+cat <<EOF | tee "${mnt_dir}/etc/vconsole.conf"
+KEYMAP=us
+EOF
+
+eval "${chroot_cmd}" "${mnt_dir}" useradd --create-home --user-group "${name_input}"
 printf "%s:%s" "${name_input}" "${password_input}" | chpasswd --root "${mnt_dir}"
 
-printf "%s ALL=(ALL) ALL\n" "${name_input}" | tee -a "${mnt_dir}/etc/sudoers"
-
-arch-chroot "${mnt_dir}" systemctl enable --now NetworkManager
+if [ "${su_cmd}" = sudo ]; then
+	printf "%s ALL=(ALL) ALL\n" "${name_input}" | tee -a "${mnt_dir}/etc/sudoers"
+elif [ "${su_cmd}" = doas ]; then
+	printf "permit %s\n" "${name_input}" | tee "${mnt_dir}/etc/doas.conf"
+fi
 
 # iptables Firewall
-cat <<EOF > "${mnt_dir}/etc/iptables/iptables.rules"
+cat <<EOF | tee "${mnt_dir}/etc/iptables/iptables.rules"
 # iptables base configuration
 # Allow outgoing connections and deny all incoming connections
 *filter
@@ -120,7 +256,7 @@ cat <<EOF > "${mnt_dir}/etc/iptables/iptables.rules"
 COMMIT
 EOF
 
-cat <<EOF > "${mnt_dir}/etc/iptables/ip6tables.rules"
+cat <<EOF | tee "${mnt_dir}/etc/iptables/ip6tables.rules"
 # ip6tables base configuration
 # Deny everything
 *filter
@@ -153,15 +289,44 @@ COMMIT
 :FORWARD DROP [0:0]
 :OUTPUT DROP [0:0]
 :POSTROUTING DROP [0:0]
+else
 COMMIT
 EOF
-systemctl enable --now iptables
+
+# Enable services on boot
+if [ "${init}" = systemd ]; then
+	arch-chroot "${mnt_dir}" systemctl enable --now iptables
+	arch-chroot "${mnt_dir}" systemctl enable --now NetworkManager
+elif [ "${init}" = openrc ]; then
+	# https://serverfault.com/questions/1059232/what-runlevel-should-ufw-firewall-start-at-in-alpine-linux
+	# Networking starts at boot run level so maybe use boot run level instead?
+	eval "${chroot_cmd}" rc-update add iptables default
+	eval "${chroot_cmd}" rc-update add networkmanager default
+elif [ "${init}" = runit ]; then
+	eval "${chroot_cmd}" ln -s /etc/runit/sv/iptables /etc/runit/runsvdir/default
+	eval "${chroot_cmd}" ln -s /etc/runit/sv/networkmanager /etc/runit/runsvdir/default
+elif [ "${init}" = "s6" ]; then
+	eval "${chroot_cmd}" s6-rc-bundle-update -c add default iptables
+	eval "${chroot_cmd}" s6-rc-bundle-update -c add default networkmanager
+elif [ "${init}" = "suite66" ]; then
+	eval "${chroot_cmd}" 66-enable -t default iptables
+	eval "${chroot_cmd}" 66-enable -t default networkmanager
+fi
 
 if [ "${efi}" -eq 1 ]; then
-	arch-chroot "${mnt_dir}" bootctl install
+	eval "${chroot_cmd}" "${mnt_dir}" grub-install --target=x86_64-efi \
+		--efi-directory="${boot_dir#${mnt_dir}}" --bootloader-id=grub
 else
-	arch-chroot "${mnt_dir}" grub-install "${disk_input}"
-	arch-chroot "${mnt_dir}" grub-mkconfig -o /boot/grub/grub.cfg
+	eval "${chroot_cmd}" "${mnt_dir}" grub-install \
+		--boot-directory="${boot_dir#${mnt_dir}}" "${disk_input}"
 fi
+eval "${chroot_cmd}" "${mnt_dir}" grub-mkconfig -o "${boot_dir#${mnt_dir}}/grub/grub.cfg"
+
+# Disable root user
+printf "%s:%s" "root" "RANDOMNOTHINGNESS" | chpasswd --root "${mnt_dir}"
+usermod --root "${mnt_dir}" --lock root || printf "ERROR: could not lock root user\n" 1>&2
+usermod --root "${mnt_dir}" --expiredate 1 root || printf "ERROR: could not set root user expiredate\n" 1>&2
+
+umount -R "${mnt_dir}" || printf "ERROR: umount error with: %s\n" "${mnt_dir}" 1>&2
 
 printf "All Done Hopefully It Works\n"
