@@ -60,16 +60,6 @@ else
 	exit 1
 fi
 
-# Update package database
-pacman -Syy
-
-# Artix does not come with parted on it's base iso so we have to install it
-# Artix does come with parted on their DE isos (at least with xfce)
-# So check and if it's not available install it
-if ! type "parted" > /dev/null 2>&1; then
-	pacman -S parted --noconfirm
-fi
-
 get_password() {
 	printf "Enter Password: "
 	stty -echo
@@ -103,14 +93,13 @@ if [ "${debug}" -eq 1 ]; then
 	disk_input="/dev/sda"
 else
 	printf "Enter Hostname (Name of the Computer): "
-	read host_input
-	printf "\nEnter Username: "
-	read name_input
+	read -r host_input
+	printf "Enter Username: "
+	read -r name_input
 	get_password
 	lsblk
-	printf "\nEnter Disk (Example: /dev/sda): "
-	read disk_input
-	printf "\n"
+	printf "Enter Disk (Example: /dev/sda): "
+	read -r disk_input
 fi
 
 if [ "${os}" = arch ]; then
@@ -129,6 +118,16 @@ if [ "${os}" = artix ]; then
 	if [ -n "${old_swap}" ]; then
 		swapoff "${old_swap}"
 	fi
+fi
+
+# Update package database
+pacman -Syy
+
+# Artix does not come with parted on it's base iso so we have to install it
+# Artix does come with parted on their DE isos (at least with xfce)
+# So check and if it's not available install it
+if ! type "parted" > /dev/null 2>&1; then
+	pacman -S parted --noconfirm
 fi
 
 # Partitioning (It's annoying)
@@ -307,7 +306,6 @@ elif [ "${init}" = openrc ]; then
 	# https://serverfault.com/questions/1059232/what-runlevel-should-ufw-firewall-start-at-in-alpine-linux
 	# Networking starts at boot run level so maybe use boot run level instead?
 	eval "${chroot_cmd}" "${mnt_dir}" rc-update add iptables default
-	eval "${chroot_cmd}" "${mnt_dir}" /etc/init.d/iptables save
 	eval "${chroot_cmd}" "${mnt_dir}" rc-update add connmand default
 elif [ "${init}" = runit ]; then
 	eval "${chroot_cmd}" "${mnt_dir}" ln -s /etc/runit/sv/iptables /etc/runit/runsvdir/default
@@ -326,6 +324,23 @@ elif [ "${init}" = suite66 ]; then
 	eval "${chroot_cmd}" "${mnt_dir}" 66-tree -ncE default
 	eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default iptables
 	eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default connmand
+fi
+
+# Have to add iptables as a module otherwise we get error when shutting down or rebooting saying:
+# your kernel lacks iptables support please load appropriate kernel modules and try agian
+# ERROR: iptables failed to stop
+# So we tell the kernel to load iptables module
+# https://forums.funtoo.org/topic/884-about-ip6tables/
+# https://forum.artixlinux.org/index.php/topic,2035.0.html
+# "what works (tested by myself) is puting your module for automaticaly load in /etc/conf.d/modules"
+if [ "${os}" = artix ]; then
+	# Tell the kernel to load the ip_tables and ip6_tables modules at boot
+	# systemd handles this a different way and it seems the arch kernel is setup
+	# to load ip_tables be default but not artix
+	printf 'modules="ip_tables ip6_tables"\n' | tee -a "${mnt_dir}/etc/conf.d/modules"
+	# Save the iptables rulse
+	eval "${chroot_cmd}" "${mnt_dir}" /etc/init.d/iptables save
+	eval "${chroot_cmd}" "${mnt_dir}" /etc/init.d/ip6tables save
 fi
 
 if [ "${efi}" -eq 1 ]; then
