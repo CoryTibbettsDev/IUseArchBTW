@@ -1,11 +1,23 @@
 #!/bin/sh
 
-# Copy script to local VM to test
+# copy.sh
+
+# Copy script to a local VM to test
+
+# On Arch you need to set a root password with `passwd`
+
+# On Artix sshd is not started by default
+# openrc: rc-service sshd start
 
 set -x
 
-if [ "${1}" = "arch" ]; then
-	scp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null IUseArchBTW root@127.0.0.1:/root
+if [ "${1}" = arch ]; then
+	user="root"
+	dir="/root"
 else
-	scp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null IUseArchBTW artix@127.0.0.1:/home/artix
+	user=artix
+	dir="/home/${user}"
 fi
+
+scp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+	IUseArchBTW "${user}"@127.0.0.1:"${dir}"

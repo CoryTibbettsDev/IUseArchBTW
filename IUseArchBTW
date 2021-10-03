@@ -55,11 +55,19 @@ if [ "${os}" = arch ]; then
 elif [ "${os}" = artix ]; then
 	su_cmd="doas"
 	chroot_cmd="artix-chroot"
-	# Artix does not come with parted on it's iso so we have to install it
-	pacman -Sy parted
 else
 	printf "Unknown os: %s\n" "${os}" 1>&2
 	exit 1
+fi
+
+# Update package database
+pacman -Syy
+
+# Artix does not come with parted on it's base iso so we have to install it
+# Artix does come with parted on their DE isos (at least with xfce)
+# So check and if it's not available install it
+if ! type "parted" > /dev/null 2>&1; then
+	pacman -S parted --noconfirm
 fi
 
 get_password() {
@@ -102,10 +110,25 @@ else
 	lsblk
 	printf "\nEnter Disk (Example: /dev/sda): "
 	read disk_input
+	printf "\n"
 fi
 
 if [ "${os}" = arch ]; then
 	timedatectl set-ntp true
+fi
+
+# Artix throws an error that target disk is in use if there is a swap partition
+# on the said target disk. Arch will though? idk
+# Find the swap partition and turn it off
+# This will turn off the first active swap partition it finds which may not be
+# the right one but not many people will have multiple disks in their machines
+# that have active swap partitions on them and who is using my script anyway tbh
+# Wish there was a better way though
+if [ "${os}" = artix ]; then
+	old_swap="$(swapon --show | awk 'FNR==2{print $1}')"
+	if [ -n "${old_swap}" ]; then
+		swapoff "${old_swap}"
+	fi
 fi
 
 # Partitioning (It's annoying)
@@ -117,27 +140,30 @@ else
 	boot_end_num=$(( ${boot_start_num} + 5 ))
 fi
 boot_end="${boot_end_num}MiB"
-# 8192MiB = 8GiB (I Think)
-swap_end_num=$(( ${boot_end_num} + 8192 ))
+# Get size of ram in mebibytes
+ram_size="$(free --mebi | awk '/Mem:/ {print $2}')"
+swap_end_num=$(( ${boot_end_num} + ${ram_size} ))
 swap_end="${swap_end_num}MiB"
+
+boot_part_num="1"
+swap_part_num="2"
+root_part_num="3"
+
+boot_part="${disk_input}${boot_part_num}"
+swap_part="${disk_input}${swap_part_num}"
+root_part="${disk_input}${root_part_num}"
 
 if [ "${efi}" -eq 1 ]; then
 	parted --script "${disk_input}" -- mklabel gpt \
-	mkpart ESP fat32 "${boot_start}" "${boot_end}" \
-	mkpart primary linux-swap "${boot_end}" "${swap_end}" \
-	mkpart primary ext4 "${swap_end}" 100% \
-	set 1 boot on || printf "PARTITIONING FAILED\n" 1>&2
+	mkpart ESP fat32 "${boot_start}" "${boot_end}" || exit 1
 else
 	parted --script "${disk_input}" -- mklabel msdos \
-	mkpart primary ext4 "${boot_start}" "${boot_end}" \
+	mkpart primary ext4 "${boot_start}" "${boot_end}" || exit 1
+fi
+parted --script "${disk_input}" -- \
 	mkpart primary linux-swap "${boot_end}" "${swap_end}" \
 	mkpart primary ext4 "${swap_end}" 100% \
-	set 1 boot on || printf "PARTITIONING FAILED\n" 1>&2
-fi
-
-boot_part="${disk_input}1"
-swap_part="${disk_input}2"
-root_part="${disk_input}3"
+	set "${boot_part_num}" boot on || exit 1
 
 # Make filesystems
 # Set labels so we can use /dev/disk/by-label later
@@ -151,28 +177,38 @@ else
 	mkfs.ext4 -L BOOT "${boot_part}"
 fi
 
+# Change swap partition permissions default 0755 is insecure
+chmod 0600 /dev/disk/by-label/SWAP
+
 # Mount partitions
 mkdir -p "${boot_dir}"
 mount /dev/disk/by-label/BOOT "${boot_dir}"
-swapon /dev/disk/by-label/SWAP "${mnt_dir}"
+swapon /dev/disk/by-label/SWAP
 mount /dev/disk/by-label/ROOT "${mnt_dir}"
 
 # Install base system
 if [ "${os}" = arch ]; then
-	pacstrap "${mnt_dir}" linux linux-firmware base vi sudo networkmanager grub --noconfirm
+	pacstrap "${mnt_dir}" linux linux-firmware base grub \
+		"${su_cmd}" vi networkmanager man-pages openssh iptables git --noconfirm
 	if [ "${efi}" -eq 1 ]; then
 		pacstrap "${mnt_dir}" efibootmgr --noconfirm
 	fi
 elif [ "${os}" = artix ]; then
-	basestrap "${mnt_dir}" linux linux-firmware base base-devel vi doas grub --noconfirm
+	# For some reason artix doesn't install man-db by default?
+	basestrap "${mnt_dir}" linux linux-firmware base grub \
+		"${su_cmd}" vi man-pages man-db git --noconfirm
 	if [ "${init}" = openrc ]; then
-		basestrap "${mnt_dir}" openrc elogind-openrc networkmanager-openrc --noconfirm
+		basestrap "${mnt_dir}" openrc elogind-openrc \
+			connman-openrc iptables-openrc openssh-openrc --noconfirm
 	elif [ "${init}" = runit ]; then
-		basestrap "${mnt_dir}" runit elogind-runit networkmanager-runit --noconfirm
+		basestrap "${mnt_dir}" runit elogind-runit \
+			connman-runit iptables-runit openssh-runit --noconfirm
 	elif [ "${init}" = s6 ]; then
-		basestrap "${mnt_dir}" s6-base elogind-s6 networkmanager-s6 --noconfirm
+		basestrap "${mnt_dir}" s6-base elogind-s6 \
+			connman-s6 iptables-s6 openssh-s6 --noconfirm
 	elif [ "${init}" = suite66 ]; then
-		basestrap "${mnt_dir}" suite66-base elogind-suite66 networkmanager-suite66 --noconfirm
+		basestrap "${mnt_dir}" suite66-base elogind-suite66 \
+			connman-suite66 openssh-suite66 --noconfirm
 	fi
 	if [ "${efi}" -eq 1 ]; then
 		basestrap "${mnt_dir}" efibootmgr --noconfirm
@@ -200,44 +236,14 @@ eval "${chroot_cmd}" "${mnt_dir}" ln -sf /usr/share/zoneinfo/America/New_York /e
 eval "${chroot_cmd}" "${mnt_dir}" hwclock --systohc
 
 # Locale and Keyboard
-printf "%s UTF-8\n" "${language}" | tee -a "${mnt_dir}/etc/locale.gen"
+printf "%s UTF-8\n" "${language}" | tee "${mnt_dir}/etc/locale.gen"
 eval "${chroot_cmd}" "${mnt_dir}" locale-gen
 cat <<EOF | tee "${mnt_dir}/etc/locale.conf"
 export LANG="${language}"
 export LC_COLLATE="C"
 EOF
-
-if [ "${os}" = artix ]; then
-cat <<EOF | tee "${mnt_dir}/etc/conf.d/keymaps"
-LANG=${language}
-LC_CTYPE="${language}"
-LC_NUMERIC="${language}"
-LC_TIME="${language}"
-LC_COLLATE="${language}"
-LC_MONETARY="${language}"
-LC_MESSAGES="${language}"
-LC_PAPER="${language}"
-LC_NAME="${language}"
-LC_ADDRESS="${language}"
-LC_TELEPHONE="${language}"
-LC_MEASUREMENT="${language}"
-LC_IDENTIFICATION="${language}"
-LC_ALL=
-EOF
-fi
-
-cat <<EOF | tee "${mnt_dir}/etc/vconsole.conf"
-KEYMAP=us
-EOF
-
-eval "${chroot_cmd}" "${mnt_dir}" useradd --create-home --user-group "${name_input}"
-printf "%s:%s" "${name_input}" "${password_input}" | chpasswd --root "${mnt_dir}"
-
-if [ "${su_cmd}" = sudo ]; then
-	printf "%s ALL=(ALL) ALL\n" "${name_input}" | tee -a "${mnt_dir}/etc/sudoers"
-elif [ "${su_cmd}" = doas ]; then
-	printf "permit %s\n" "${name_input}" | tee "${mnt_dir}/etc/doas.conf"
-fi
+printf "KEYMAP=us\n" | tee "${mnt_dir}/etc/conf.d/keymaps" \
+	"${mnt_dir}/etc/vconsole.conf"
 
 # iptables Firewall
 cat <<EOF | tee "${mnt_dir}/etc/iptables/iptables.rules"
@@ -300,17 +306,26 @@ if [ "${init}" = systemd ]; then
 elif [ "${init}" = openrc ]; then
 	# https://serverfault.com/questions/1059232/what-runlevel-should-ufw-firewall-start-at-in-alpine-linux
 	# Networking starts at boot run level so maybe use boot run level instead?
-	eval "${chroot_cmd}" rc-update add iptables default
-	eval "${chroot_cmd}" rc-update add networkmanager default
+	eval "${chroot_cmd}" "${mnt_dir}" rc-update add iptables default
+	eval "${chroot_cmd}" "${mnt_dir}" /etc/init.d/iptables save
+	eval "${chroot_cmd}" "${mnt_dir}" rc-update add connmand default
 elif [ "${init}" = runit ]; then
-	eval "${chroot_cmd}" ln -s /etc/runit/sv/iptables /etc/runit/runsvdir/default
-	eval "${chroot_cmd}" ln -s /etc/runit/sv/networkmanager /etc/runit/runsvdir/default
-elif [ "${init}" = "s6" ]; then
-	eval "${chroot_cmd}" s6-rc-bundle-update -c add default iptables
-	eval "${chroot_cmd}" s6-rc-bundle-update -c add default networkmanager
-elif [ "${init}" = "suite66" ]; then
-	eval "${chroot_cmd}" 66-enable -t default iptables
-	eval "${chroot_cmd}" 66-enable -t default networkmanager
+	eval "${chroot_cmd}" "${mnt_dir}" ln -s /etc/runit/sv/iptables /etc/runit/runsvdir/default
+	eval "${chroot_cmd}" "${mnt_dir}" ln -s /etc/runit/sv/connmand /etc/runit/runsvdir/default
+elif [ "${init}" = s6 ]; then
+	eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
+		-c /etc/s6/rc/compiled add default iptables
+	eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
+		-c /etc/s6/rc/compiled add default connmand
+elif [ "${init}" = suite66 ]; then
+	# suite66 needs some special setup
+	eval "${chroot_cmd}" "${mnt_dir}" 66-tree -n boot
+	eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t boot boot@system
+
+	# Need to create default tree first
+	eval "${chroot_cmd}" "${mnt_dir}" 66-tree -ncE default
+	eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default iptables
+	eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default connmand
 fi
 
 if [ "${efi}" -eq 1 ]; then
@@ -320,13 +335,29 @@ else
 	eval "${chroot_cmd}" "${mnt_dir}" grub-install \
 		--boot-directory="${boot_dir#${mnt_dir}}" "${disk_input}"
 fi
-eval "${chroot_cmd}" "${mnt_dir}" grub-mkconfig -o "${boot_dir#${mnt_dir}}/grub/grub.cfg"
+eval "${chroot_cmd}" "${mnt_dir}" grub-mkconfig \
+	-o "${boot_dir#${mnt_dir}}/grub/grub.cfg"
+
+# Add user
+eval "${chroot_cmd}" "${mnt_dir}" useradd --create-home --user-group "${name_input}"
+printf "%s:%s" "${name_input}" "${password_input}" | chpasswd --root "${mnt_dir}"
+
+if [ "${su_cmd}" = sudo ]; then
+	printf "%s ALL=(ALL) ALL\n" "${name_input}" | tee -a "${mnt_dir}/etc/sudoers"
+elif [ "${su_cmd}" = doas ]; then
+	printf "permit %s\n" "${name_input}" | tee "${mnt_dir}/etc/doas.conf"
+else
+	printf "ERROR: Unsupported or null su_cmd '%s'\n" "${su_cmd}" 1>&2
+fi
 
 # Disable root user
 printf "%s:%s" "root" "RANDOMNOTHINGNESS" | chpasswd --root "${mnt_dir}"
-usermod --root "${mnt_dir}" --lock root || printf "ERROR: could not lock root user\n" 1>&2
-usermod --root "${mnt_dir}" --expiredate 1 root || printf "ERROR: could not set root user expiredate\n" 1>&2
+usermod --root "${mnt_dir}" --lock root ||
+	printf "ERROR: could not lock root user\n" 1>&2
+usermod --root "${mnt_dir}" --expiredate 1 root ||
+	printf "ERROR: could not set root user expiredate\n" 1>&2
 
-umount -R "${mnt_dir}" || printf "ERROR: umount error with: %s\n" "${mnt_dir}" 1>&2
+umount -R "${mnt_dir}" ||
+	printf "ERROR: umount error with '%s'\n" "${mnt_dir}" 1>&2
 
 printf "All Done Hopefully It Works\n"
