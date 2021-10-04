@@ -187,30 +187,36 @@ mount /dev/disk/by-label/ROOT "${mnt_dir}"
 
 # Install base system
 if [ "${os}" = arch ]; then
-	pacstrap "${mnt_dir}" linux linux-firmware base grub \
-		"${su_cmd}" vi networkmanager man-pages openssh iptables git --noconfirm
+	pacstrap -c "${mnt_dir}" linux linux-firmware base base-devel grub \
+		vi networkmanager man-pages openssh iptables git
 	if [ "${efi}" -eq 1 ]; then
-		pacstrap "${mnt_dir}" efibootmgr --noconfirm
+		pacstrap -c "${mnt_dir}" efibootmgr
 	fi
 elif [ "${os}" = artix ]; then
 	# For some reason artix doesn't install man-db by default?
-	basestrap "${mnt_dir}" linux linux-firmware base grub \
-		"${su_cmd}" vi man-pages man-db git --noconfirm
+	basestrap -c "${mnt_dir}" linux linux-firmware base grub \
+		doas vi man-pages man-db git
+	# Don't install sudo since we are using doas
+	# Have to install all members of base-devel manually
+	# I have not found a workaround for this yet
+	basestrap -c "${mnt_dir}" autoconf automake binutils bison esysusers \
+		etmpfiles fakeroot file findutils flex gawk gcc gettext grep groff gzip \
+		libtool m4 make pacman patch pkgconf sed texinfo which
 	if [ "${init}" = openrc ]; then
-		basestrap "${mnt_dir}" openrc elogind-openrc \
-			connman-openrc iptables-openrc openssh-openrc --noconfirm
+		basestrap -c "${mnt_dir}" openrc elogind-openrc \
+			connman-openrc iptables-openrc openssh-openrc
 	elif [ "${init}" = runit ]; then
-		basestrap "${mnt_dir}" runit elogind-runit \
-			connman-runit iptables-runit openssh-runit --noconfirm
+		basestrap -c "${mnt_dir}" runit elogind-runit \
+			connman-runit iptables-runit openssh-runit
 	elif [ "${init}" = s6 ]; then
-		basestrap "${mnt_dir}" s6-base elogind-s6 \
-			connman-s6 iptables-s6 openssh-s6 --noconfirm
+		basestrap -c "${mnt_dir}" s6-base elogind-s6 \
+			connman-s6 iptables-s6 openssh-s6
 	elif [ "${init}" = suite66 ]; then
-		basestrap "${mnt_dir}" suite66-base elogind-suite66 \
-			connman-suite66 openssh-suite66 --noconfirm
+		basestrap -c "${mnt_dir}" suite66-base elogind-suite66 \
+			connman-suite66 openssh-suite66
 	fi
 	if [ "${efi}" -eq 1 ]; then
-		basestrap "${mnt_dir}" efibootmgr --noconfirm
+		basestrap -c "${mnt_dir}" efibootmgr
 	fi
 fi
 
