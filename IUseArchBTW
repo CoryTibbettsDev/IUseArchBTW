@@ -107,11 +107,11 @@ if [ "${os}" = arch ]; then
 fi
 
 # Artix throws an error that target disk is in use if there is a swap partition
-# on the said target disk. Arch will though? idk
+# on the said target disk. Arch will not though? idk
 # Find the swap partition and turn it off
 # This will turn off the first active swap partition it finds which may not be
 # the right one but not many people will have multiple disks in their machines
-# that have active swap partitions on them and who is using my script anyway tbh
+# that have active swap partitions on them and who is using my script anyway?
 # Wish there was a better way though
 if [ "${os}" = artix ]; then
 	old_swap="$(swapon --show | awk 'FNR==2{print $1}')"
@@ -144,9 +144,9 @@ ram_size="$(free --mebi | awk '/Mem:/ {print $2}')"
 swap_end_num=$(( ${boot_end_num} + ${ram_size} ))
 swap_end="${swap_end_num}MiB"
 
-boot_part_num="1"
-swap_part_num="2"
-root_part_num="3"
+boot_part_num=1
+swap_part_num=2
+root_part_num=3
 
 boot_part="${disk_input}${boot_part_num}"
 swap_part="${disk_input}${swap_part_num}"
@@ -176,21 +176,33 @@ else
 	mkfs.ext4 -L BOOT "${boot_part}"
 fi
 
-# Change swap partition permissions default 0755 is insecure
-chmod 0600 /dev/disk/by-label/SWAP
-
 # Mount partitions
 mkdir -p "${boot_dir}"
-mount /dev/disk/by-label/BOOT "${boot_dir}"
-swapon /dev/disk/by-label/SWAP
+# For some reason the arch iso won't find the SWAP and BOOT /dev/disk/by-label
+# but will find ROOT. I don't know why but this is my workaround. Artix does it
+# fine so know idea what the deal is.
+# This is the case as of 2021.10.01 arch release
+if [ "${os}" = arch ]; then
+	# Change swap partition permissions default 0755 is insecure
+	chmod 0600 "${swap_part}"
+
+	mount "${boot_part}" "${boot_dir}"
+	swapon -L SWAP
+elif [ "${os}" = artix ]; then
+	# Change swap partition permissions default 0755 is insecure
+	chmod 0600 /dev/disk/by-label/SWAP
+
+	mount /dev/disk/by-label/BOOT "${boot_dir}"
+	swapon /dev/disk/by-label/SWAP
+fi
 mount /dev/disk/by-label/ROOT "${mnt_dir}"
 
 # Install base system
 if [ "${os}" = arch ]; then
-	pacstrap -c "${mnt_dir}" linux linux-firmware base base-devel grub \
+	pacstrap "${mnt_dir}" linux linux-firmware base base-devel grub \
 		vi networkmanager man-pages openssh iptables git
 	if [ "${efi}" -eq 1 ]; then
-		pacstrap -c "${mnt_dir}" efibootmgr
+		pacstrap "${mnt_dir}" efibootmgr
 	fi
 elif [ "${os}" = artix ]; then
 	# For some reason artix doesn't install man-db by default?
@@ -202,19 +214,24 @@ elif [ "${os}" = artix ]; then
 	basestrap -c "${mnt_dir}" autoconf automake binutils bison esysusers \
 		etmpfiles fakeroot file findutils flex gawk gcc gettext grep groff gzip \
 		libtool m4 make pacman patch pkgconf sed texinfo which
-	if [ "${init}" = openrc ]; then
-		basestrap -c "${mnt_dir}" openrc elogind-openrc \
-			connman-openrc iptables-openrc openssh-openrc
-	elif [ "${init}" = runit ]; then
-		basestrap -c "${mnt_dir}" runit elogind-runit \
-			connman-runit iptables-runit openssh-runit
-	elif [ "${init}" = s6 ]; then
+	case "${init}" in
+		openrc)
+			basestrap -c "${mnt_dir}" openrc elogind-openrc \
+				connman-openrc iptables-openrc openssh-openrc
+			;;
+		runit)
+			basestrap -c "${mnt_dir}" runit elogind-runit \
+				connman-runit iptables-runit openssh-runit
+			;;
+		s6)
 		basestrap -c "${mnt_dir}" s6-base elogind-s6 \
 			connman-s6 iptables-s6 openssh-s6
-	elif [ "${init}" = suite66 ]; then
-		basestrap -c "${mnt_dir}" suite66-base elogind-suite66 \
-			connman-suite66 openssh-suite66
-	fi
+			;;
+		suite66)
+			basestrap -c "${mnt_dir}" suite66-base elogind-suite66 \
+				connman-suite66 openssh-suite66
+			;;
+	esac
 	if [ "${efi}" -eq 1 ]; then
 		basestrap -c "${mnt_dir}" efibootmgr
 	fi
@@ -305,32 +322,39 @@ COMMIT
 EOF
 
 # Enable services on boot
-if [ "${init}" = systemd ]; then
-	arch-chroot "${mnt_dir}" systemctl enable --now iptables
-	arch-chroot "${mnt_dir}" systemctl enable --now NetworkManager
-elif [ "${init}" = openrc ]; then
-	# https://serverfault.com/questions/1059232/what-runlevel-should-ufw-firewall-start-at-in-alpine-linux
-	# Networking starts at boot run level so maybe use boot run level instead?
-	eval "${chroot_cmd}" "${mnt_dir}" rc-update add iptables default
-	eval "${chroot_cmd}" "${mnt_dir}" rc-update add connmand default
-elif [ "${init}" = runit ]; then
-	eval "${chroot_cmd}" "${mnt_dir}" ln -s /etc/runit/sv/iptables /etc/runit/runsvdir/default
-	eval "${chroot_cmd}" "${mnt_dir}" ln -s /etc/runit/sv/connmand /etc/runit/runsvdir/default
-elif [ "${init}" = s6 ]; then
-	eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
-		-c /etc/s6/rc/compiled add default iptables
-	eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
-		-c /etc/s6/rc/compiled add default connmand
-elif [ "${init}" = suite66 ]; then
-	# suite66 needs some special setup
-	eval "${chroot_cmd}" "${mnt_dir}" 66-tree -n boot
-	eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t boot boot@system
-
-	# Need to create default tree first
-	eval "${chroot_cmd}" "${mnt_dir}" 66-tree -ncE default
-	eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default iptables
-	eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default connmand
-fi
+case "${init}" in
+	systemd)
+		arch-chroot "${mnt_dir}" systemctl enable --now iptables
+		arch-chroot "${mnt_dir}" systemctl enable --now NetworkManager
+		;;
+	openrc)
+		# https://serverfault.com/questions/1059232/what-runlevel-should-ufw-firewall-start-at-in-alpine-linux
+		# Networking starts at boot run level so maybe use boot run level instead?
+		eval "${chroot_cmd}" "${mnt_dir}" rc-update add iptables default
+		eval "${chroot_cmd}" "${mnt_dir}" rc-update add connmand default
+		;;
+	runit)
+		eval "${chroot_cmd}" "${mnt_dir}" \
+			ln -s /etc/runit/sv/iptables /etc/runit/runsvdir/default
+		eval "${chroot_cmd}" "${mnt_dir}" \
+			ln -s /etc/runit/sv/connmand /etc/runit/runsvdir/default
+		;;
+	s6)
+		eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
+			-c /etc/s6/rc/compiled add default iptables
+		eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
+			-c /etc/s6/rc/compiled add default connmand
+		;;
+	suite66)
+		# suite66 needs some special setup
+		eval "${chroot_cmd}" "${mnt_dir}" 66-tree -n boot
+		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t boot boot@system
+		# Need to create default tree first
+		eval "${chroot_cmd}" "${mnt_dir}" 66-tree -ncE default
+		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default iptables
+		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default connmand
+		;;
+esac
 
 # Have to add iptables as a module otherwise we get error when shutting down or rebooting saying:
 # your kernel lacks iptables support please load appropriate kernel modules and try agian
@@ -338,7 +362,6 @@ fi
 # So we tell the kernel to load iptables module
 # https://forums.funtoo.org/topic/884-about-ip6tables/
 # https://forum.artixlinux.org/index.php/topic,2035.0.html
-# "what works (tested by myself) is puting your module for automaticaly load in /etc/conf.d/modules"
 if [ "${os}" = artix ]; then
 	# Tell the kernel to load the ip_tables and ip6_tables modules at boot
 	# systemd handles this a different way and it seems the arch kernel is setup
@@ -363,13 +386,17 @@ eval "${chroot_cmd}" "${mnt_dir}" grub-mkconfig \
 eval "${chroot_cmd}" "${mnt_dir}" useradd --create-home --user-group "${name_input}"
 printf "%s:%s" "${name_input}" "${password_input}" | chpasswd --root "${mnt_dir}"
 
-if [ "${su_cmd}" = sudo ]; then
-	printf "%s ALL=(ALL) ALL\n" "${name_input}" | tee -a "${mnt_dir}/etc/sudoers"
-elif [ "${su_cmd}" = doas ]; then
-	printf "permit %s\n" "${name_input}" | tee "${mnt_dir}/etc/doas.conf"
-else
-	printf "ERROR: Unsupported or null su_cmd '%s'\n" "${su_cmd}" 1>&2
-fi
+case "${su_cmd}" in
+	sudo)
+		printf "%s ALL=(ALL) ALL\n" "${name_input}" | tee -a "${mnt_dir}/etc/sudoers"
+		;;
+	doas)
+		printf "permit %s\n" "${name_input}" | tee "${mnt_dir}/etc/doas.conf"
+		;;
+	*)
+		printf "ERROR: Unsupported or null su_cmd '%s'\n" "${su_cmd}" 1>&2
+		;;
+esac
 
 # Disable root user
 printf "%s:%s" "root" "RANDOMNOTHINGNESS" | chpasswd --root "${mnt_dir}"

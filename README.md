@@ -18,10 +18,10 @@ You can copy the script to another computer with `scp`<br  />
 # Status
 ## Arch
 ### Tested
-- systemd
+- systemd 2021.10.01
 ## Artix
 ### Tested
-- openrc
+- openrc xfce 20210726
 ### Untested
 - runit
 - s6
