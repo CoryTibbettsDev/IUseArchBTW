@@ -13,12 +13,19 @@ if [ "${1}" = "d" ] || [ "${1}" = "debug" ]; then
 fi
 
 mnt_dir="/mnt"
-boot_dir="${mnt_dir}/boot"
+if [ "${efi}" -eq 1 ]; then
+	boot_dir="${mnt_dir}/boot/efi"
+else
+	boot_dir="${mnt_dir}/boot"
+fi
 # Path to check if the system is booted as UEFI or BIOS
 efi_path="/sys/firmware/efi/efivars"
 # Directory to mount EFI boot data
 efi=0
 [ -d "${efi_path}" ] && efi=1
+
+enable_lib32_repos=0
+artix_enable_arch_repos=0
 
 # Redirect output to log files
 exec 1> >(tee "out.log")
@@ -64,13 +71,13 @@ fi
 
 yes_no() {
 	while :; do
-		printf "$* [Y/n]: "
+		printf "$* [y/N]: "
 		read -r answer
 		case "${answer}" in
-			# Case insensitive match: n no
-			[Nn]|[Nn][Oo]) return 1;;
-			# Case insensitive match: y yes <nothing>
-			[Yy]|[Yy][Ee][Ss]|"") return 0;;
+			# Case insensitive match: n no <nothing>
+			[Nn]|[Nn][Oo]|"") return 1;;
+			# Case insensitive match: y yes
+			[Yy]|[Yy][Ee][Ss]) return 0;;
 			*) printf "Please answer [y]es or [n]o\n";;
 		esac
 	done
@@ -117,12 +124,10 @@ else
 	printf "Enter Disk (Example: /dev/sda): "
 	read -r disk_input
 	yes_no "Enable 32-bit Repositories?" &&
-		enable_lib32_repos=1 ||
-		enable_lib32_repos=0
+		enable_lib32_repos=1
 	if [ "${os}" = artix ]; then
 		yes_no "Enable Arch Linux Repositories?" &&
-			artix_enable_arch_repos=1 ||
-			artix_enable_arch_repos=0
+			artix_enable_arch_repos=1
 	fi
 fi
 
@@ -178,7 +183,7 @@ root_part="${disk_input}${root_part_num}"
 
 if [ "${efi}" -eq 1 ]; then
 	parted --script "${disk_input}" -- mklabel gpt \
-	mkpart ESP fat32 "${boot_start}" "${boot_end}" || exit 1
+	mkpart BOOT "${boot_start}" "${boot_end}" || exit 1
 else
 	parted --script "${disk_input}" -- mklabel msdos \
 	mkpart primary ext4 "${boot_start}" "${boot_end}" || exit 1
@@ -187,6 +192,10 @@ parted --script "${disk_input}" -- \
 	mkpart primary linux-swap "${boot_end}" "${swap_end}" \
 	mkpart primary ext4 "${swap_end}" 100% \
 	set "${boot_part_num}" boot on || exit 1
+if [ "${efi}" -eq 1 ]; then
+	parted --script "${disk_input}" -- \
+		set "${boot_part_num}" esp on || exit 1
+fi
 
 # Make filesystems
 # Set labels so we can use /dev/disk/by-label later
@@ -194,7 +203,7 @@ mkfs.ext4 -L ROOT "${root_part}"
 mkswap -L SWAP "${swap_part}"
 
 if [ "${efi}" -eq 1 ]; then
-	mkfs.fat -F 32 -n boot "${boot_part}"
+	mkfs.fat -F 32 "${boot_part}"
 	fatlabel "${boot_part}" BOOT
 else
 	mkfs.ext4 -L BOOT "${boot_part}"
@@ -202,24 +211,13 @@ fi
 
 # Mount partitions
 mkdir -p "${boot_dir}"
-# For some reason the arch iso won't find the SWAP and BOOT /dev/disk/by-label
-# but will find ROOT. I don't know why but this is my workaround. Artix does it
-# fine so know idea what the deal is.
-# This is the case as of 2021.10.01 arch release
-if [ "${os}" = arch ]; then
-	# Change swap partition permissions default 0755 is insecure
-	chmod 0600 "${swap_part}"
-
-	mount "${boot_part}" "${boot_dir}"
-	swapon -L SWAP
-elif [ "${os}" = artix ]; then
-	# Change swap partition permissions default 0755 is insecure
-	chmod 0600 /dev/disk/by-label/SWAP
-
-	mount /dev/disk/by-label/BOOT "${boot_dir}"
-	swapon /dev/disk/by-label/SWAP
-fi
-mount /dev/disk/by-label/ROOT "${mnt_dir}"
+# I have had a great deal of issues using /dev/disk/by-label so just explicitly
+# use the partitions by name as I already have the variables available
+mount "${boot_part}" "${boot_dir}"
+# Change swap partition permissions default 0755 is insecure
+chmod 0600 "${swap_part}"
+swapon "${swap_part}"
+mount "${root_part}" "${mnt_dir}"
 
 # Install base system
 if [ "${os}" = arch ]; then
@@ -439,8 +437,7 @@ if [ "${os}" = artix ]; then
 fi
 
 if [ "${efi}" -eq 1 ]; then
-	eval "${chroot_cmd}" "${mnt_dir}" grub-install --target=x86_64-efi \
-		--efi-directory="${boot_dir#${mnt_dir}}" --bootloader-id=grub
+	eval "${chroot_cmd}" "${mnt_dir}" grub-install
 else
 	eval "${chroot_cmd}" "${mnt_dir}" grub-install \
 		--boot-directory="${boot_dir#${mnt_dir}}" "${disk_input}"
