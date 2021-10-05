@@ -21,7 +21,7 @@ You can copy the script to another computer with `scp`<br  />
 - systemd 2021.10.01
 ## Artix
 ### Tested
-- openrc xfce 20210726
+- openrc 20210726
 ### Untested
 - runit
 - s6

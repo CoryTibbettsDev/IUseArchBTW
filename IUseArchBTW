@@ -2,6 +2,8 @@
 
 # IUseArchBTW
 
+prog="IUseArchBTW"
+
 # Enable debugging and testing
 # Example: sh IUseArchBTW debug
 debug=0
@@ -60,6 +62,20 @@ else
 	exit 1
 fi
 
+yes_no() {
+	while :; do
+		printf "$* [Y/n]: "
+		read -r answer
+		case "${answer}" in
+			# Case insensitive match: n no
+			[Nn]|[Nn][Oo]) return 1;;
+			# Case insensitive match: y yes <nothing>
+			[Yy]|[Yy][Ee][Ss]|"") return 0;;
+			*) printf "Please answer [y]es or [n]o\n";;
+		esac
+	done
+}
+
 get_password() {
 	printf "Enter Password: "
 	stty -echo
@@ -100,6 +116,14 @@ else
 	lsblk
 	printf "Enter Disk (Example: /dev/sda): "
 	read -r disk_input
+	yes_no "Enable 32-bit Repositories?" &&
+		enable_lib32_repos=1 ||
+		enable_lib32_repos=0
+	if [ "${os}" = artix ]; then
+		yes_no "Enable Arch Linux Repositories?" &&
+			artix_enable_arch_repos=1 ||
+			artix_enable_arch_repos=0
+	fi
 fi
 
 if [ "${os}" = arch ]; then
@@ -235,6 +259,48 @@ elif [ "${os}" = artix ]; then
 	if [ "${efi}" -eq 1 ]; then
 		basestrap -c "${mnt_dir}" efibootmgr
 	fi
+fi
+
+# Enable 32-bit repositories
+if [ "${enable_lib32_repos}" -eq 1 ]; then
+	case "${os}" in
+		arch)
+			printf "# Enabled by ${prog}\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n" | \
+				tee -a "${mnt_dir}/etc/pacman.conf"
+			;;
+		artix)
+			printf "# Enabled by ${prog}\n[lib32]\nInclude = /etc/pacman.d/mirrorlist\n" | \
+				tee -a "${mnt_dir}/etc/pacman.conf"
+			;;
+	esac
+fi
+
+# Enable arch linux repositories is artix linux
+if [ "${artix_enable_arch_repos}" -eq 1 ]; then
+	basestrap "${mnt_dir}" artix-archlinux-support
+cat <<EOF | tee -a "${mnt_dir}/etc/pacman.conf"
+
+# Enabled by ${prog}
+# ARCH
+#[testing]
+#Include = /etc/pacman.d/mirrorlist-arch
+
+[extra]
+Include = /etc/pacman.d/mirrorlist-arch
+
+#[community-testing]
+#Include = /etc/pacman.d/mirrorlist-arch
+
+[community]
+Include = /etc/pacman.d/mirrorlist-arch
+
+#[multilib-testing]
+#Include = /etc/pacman.d/mirrorlist-arch
+
+#[multilib]
+#Include = /etc/pacman.d/mirrorlist-arch
+EOF
+	eval "${chroot_cmd}" "${mnt_dir}" pacman-key --populate archlinux
 fi
 
 # Generate fstab
