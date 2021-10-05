@@ -183,31 +183,16 @@ root_part="${disk_input}${root_part_num}"
 
 if [ "${efi}" -eq 1 ]; then
 	parted --script "${disk_input}" -- mklabel gpt \
-	mkpart BOOT "${boot_start}" "${boot_end}" || exit 1
+		mkpart EFI fat32 "${boot_start}" "${boot_end}" \
+		set "${boot_part_num}" esp on || exit 1
 else
 	parted --script "${disk_input}" -- mklabel msdos \
-	mkpart primary ext4 "${boot_start}" "${boot_end}" || exit 1
+		mkpart primary ext4 "${boot_start}" "${boot_end}" \
+		set "${boot_part_num}" boot on || exit 1
 fi
 parted --script "${disk_input}" -- \
 	mkpart primary linux-swap "${boot_end}" "${swap_end}" \
-	mkpart primary ext4 "${swap_end}" 100% \
-	set "${boot_part_num}" boot on || exit 1
-if [ "${efi}" -eq 1 ]; then
-	parted --script "${disk_input}" -- \
-		set "${boot_part_num}" esp on || exit 1
-fi
-
-# Make filesystems
-# Set labels so we can use /dev/disk/by-label later
-mkfs.ext4 -L ROOT "${root_part}"
-mkswap -L SWAP "${swap_part}"
-
-if [ "${efi}" -eq 1 ]; then
-	mkfs.fat -F 32 "${boot_part}"
-	fatlabel "${boot_part}" BOOT
-else
-	mkfs.ext4 -L BOOT "${boot_part}"
-fi
+	mkpart primary ext4 "${swap_end}" 100% || exit 1
 
 # Mount partitions
 mkdir -p "${boot_dir}"
@@ -228,34 +213,34 @@ if [ "${os}" = arch ]; then
 	fi
 elif [ "${os}" = artix ]; then
 	# For some reason artix doesn't install man-db by default?
-	basestrap -c "${mnt_dir}" linux linux-firmware base grub \
+	basestrap "${mnt_dir}" linux linux-firmware base grub \
 		doas vi man-pages man-db git
 	# Don't install sudo since we are using doas
 	# Have to install all members of base-devel manually
 	# I have not found a workaround for this yet
-	basestrap -c "${mnt_dir}" autoconf automake binutils bison esysusers \
+	basestrap "${mnt_dir}" autoconf automake binutils bison esysusers \
 		etmpfiles fakeroot file findutils flex gawk gcc gettext grep groff gzip \
 		libtool m4 make pacman patch pkgconf sed texinfo which
 	case "${init}" in
 		openrc)
-			basestrap -c "${mnt_dir}" openrc elogind-openrc \
+			basestrap "${mnt_dir}" openrc elogind-openrc \
 				connman-openrc iptables-openrc openssh-openrc
 			;;
 		runit)
-			basestrap -c "${mnt_dir}" runit elogind-runit \
+			basestrap "${mnt_dir}" runit elogind-runit \
 				connman-runit iptables-runit openssh-runit
 			;;
 		s6)
-		basestrap -c "${mnt_dir}" s6-base elogind-s6 \
+		basestrap "${mnt_dir}" s6-base elogind-s6 \
 			connman-s6 iptables-s6 openssh-s6
 			;;
 		suite66)
-			basestrap -c "${mnt_dir}" suite66-base elogind-suite66 \
+			basestrap "${mnt_dir}" suite66-base elogind-suite66 \
 				connman-suite66 openssh-suite66
 			;;
 	esac
 	if [ "${efi}" -eq 1 ]; then
-		basestrap -c "${mnt_dir}" efibootmgr
+		basestrap "${mnt_dir}" efibootmgr
 	fi
 fi
 
@@ -438,10 +423,10 @@ fi
 
 if [ "${efi}" -eq 1 ]; then
 	eval "${chroot_cmd}" "${mnt_dir}" grub-install --target=x86_64-efi \
-		--efi-directory="${boot_dir#${mnt_dir}}" --bootloader-id=grub
+		--efi-directory="${boot_dir#${mnt_dir}}" --bootloader-id=grub --recheck
 else
 	eval "${chroot_cmd}" "${mnt_dir}" grub-install \
-		--boot-directory="${boot_dir#${mnt_dir}}" "${disk_input}"
+		--boot-directory="${boot_dir#${mnt_dir}}" "${disk_input}" --recheck
 fi
 eval "${chroot_cmd}" "${mnt_dir}" grub-mkconfig \
 	-o "${boot_dir#${mnt_dir}}/grub/grub.cfg"
