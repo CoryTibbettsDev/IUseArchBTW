@@ -437,7 +437,8 @@ if [ "${os}" = artix ]; then
 fi
 
 if [ "${efi}" -eq 1 ]; then
-	eval "${chroot_cmd}" "${mnt_dir}" grub-install
+	eval "${chroot_cmd}" "${mnt_dir}" grub-install --target=x86_64-efi \
+		--efi-directory="${boot_dir#${mnt_dir}}" --bootloader-id=grub
 else
 	eval "${chroot_cmd}" "${mnt_dir}" grub-install \
 		--boot-directory="${boot_dir#${mnt_dir}}" "${disk_input}"
