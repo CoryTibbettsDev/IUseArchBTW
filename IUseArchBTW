@@ -13,11 +13,7 @@ if [ "${1}" = "d" ] || [ "${1}" = "debug" ]; then
 fi
 
 mnt_dir="/mnt"
-if [ "${efi}" -eq 1 ]; then
-	boot_dir="${mnt_dir}/boot/efi"
-else
-	boot_dir="${mnt_dir}/boot"
-fi
+boot_dir="${mnt_dir}/boot"
 # Path to check if the system is booted as UEFI or BIOS
 efi_path="/sys/firmware/efi/efivars"
 # Directory to mount EFI boot data
@@ -423,10 +419,10 @@ fi
 
 if [ "${efi}" -eq 1 ]; then
 	eval "${chroot_cmd}" "${mnt_dir}" grub-install --target=x86_64-efi \
-		--efi-directory="${boot_dir#${mnt_dir}}" --bootloader-id=grub --recheck
+		--efi-directory="${boot_dir#${mnt_dir}}" --bootloader-id=grub "${disk_input}"
 else
 	eval "${chroot_cmd}" "${mnt_dir}" grub-install \
-		--boot-directory="${boot_dir#${mnt_dir}}" "${disk_input}" --recheck
+		--boot-directory="${boot_dir#${mnt_dir}}" "${disk_input}"
 fi
 eval "${chroot_cmd}" "${mnt_dir}" grub-mkconfig \
 	-o "${boot_dir#${mnt_dir}}/grub/grub.cfg"
