@@ -191,14 +191,15 @@ parted --script "${disk_input}" -- \
 	mkpart primary ext4 "${swap_end}" 100% || exit 1
 
 # Mount partitions
-mkdir -p "${boot_dir}"
-# I have had a great deal of issues using /dev/disk/by-label so just explicitly
-# use the partitions by name as I already have the variables available
-mount "${boot_part}" "${boot_dir}"
 # Change swap partition permissions default 0755 is insecure
 chmod 0600 "${swap_part}"
 swapon "${swap_part}"
 mount "${root_part}" "${mnt_dir}"
+mkdir -p "${boot_dir}"
+# I have had a great deal of issues using /dev/disk/by-label so just explicitly
+# use the partitions by name as I already have the variables available
+# Needs to be mounted after root partition /
+mount "${boot_part}" "${boot_dir}"
 
 # Install base system
 if [ "${os}" = arch ]; then
