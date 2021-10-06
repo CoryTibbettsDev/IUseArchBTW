@@ -454,7 +454,9 @@ usermod --root "${mnt_dir}" --lock root ||
 usermod --root "${mnt_dir}" --expiredate 1 root ||
 	printf "ERROR: could not set root user expiredate\n" 1>&2
 
-umount -R "${mnt_dir}" ||
-	printf "ERROR: umount error with '%s'\n" "${mnt_dir}" 1>&2
+if [ "${debug}" -ne 1 ]; then
+	umount -R "${mnt_dir}" ||
+		printf "ERROR: umount error with '%s'\n" "${mnt_dir}" 1>&2
+fi
 
 printf "All Done Hopefully It Works\n"
