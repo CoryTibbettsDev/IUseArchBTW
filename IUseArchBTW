@@ -64,13 +64,13 @@ fi
 
 yes_no() {
 	while :; do
-		printf "$* [Y/n]: "
+		printf "$* [y/N]: "
 		read -r answer
 		case "${answer}" in
-			# Case insensitive match: n no
-			[Nn]|[Nn][Oo]) return 1;;
-			# Case insensitive match: y yes <nothing>
-			[Yy]|[Yy][Ee][Ss]|"") return 0;;
+			# Case insensitive match: n no <nothing>
+			[Nn]|[Nn][Oo]|"") return 1;;
+			# Case insensitive match: y yes
+			[Yy]|[Yy][Ee][Ss]) return 0;;
 			*) printf "Please answer [y]es or [n]o\n";;
 		esac
 	done
@@ -100,6 +100,8 @@ printf "Detected operarting system is: %s\n" "${os}"
 printf "Detected init system is: %s\n" "${init}"
 
 language="en_US.UTF-8"
+enable_lib32_repos=0
+artix_enable_arch_repos=0
 
 if [ "${debug}" -eq 1 ]; then
 	# Preset variables for testing
@@ -117,12 +119,10 @@ else
 	printf "Enter Disk (Example: /dev/sda): "
 	read -r disk_input
 	yes_no "Enable 32-bit Repositories?" &&
-		enable_lib32_repos=1 ||
-		enable_lib32_repos=0
+		enable_lib32_repos=1
 	if [ "${os}" = artix ]; then
 		yes_no "Enable Arch Linux Repositories?" &&
-			artix_enable_arch_repos=1 ||
-			artix_enable_arch_repos=0
+			artix_enable_arch_repos=1
 	fi
 fi
 
@@ -178,48 +178,38 @@ root_part="${disk_input}${root_part_num}"
 
 if [ "${efi}" -eq 1 ]; then
 	parted --script "${disk_input}" -- mklabel gpt \
-	mkpart ESP fat32 "${boot_start}" "${boot_end}" || exit 1
+		mkpart BOOTPART fat32 "${boot_start}" "${boot_end}" \
+		mkpart SWAPPART linux-swap "${boot_end}" "${swap_end}" \
+		mkpart ROOTPART ext4 "${swap_end}" 100% \
+		set "${boot_part_num}" esp on || exit 1
 else
 	parted --script "${disk_input}" -- mklabel msdos \
-	mkpart primary ext4 "${boot_start}" "${boot_end}" || exit 1
+		mkpart primary ext4 "${boot_start}" "${boot_end}" \
+		mkpart primary linux-swap "${boot_end}" "${swap_end}" \
+		mkpart primary ext4 "${swap_end}" 100% \
+		set "${boot_part_num}" boot on || exit 1
 fi
-parted --script "${disk_input}" -- \
-	mkpart primary linux-swap "${boot_end}" "${swap_end}" \
-	mkpart primary ext4 "${swap_end}" 100% \
-	set "${boot_part_num}" boot on || exit 1
 
 # Make filesystems
-# Set labels so we can use /dev/disk/by-label later
 mkfs.ext4 -L ROOT "${root_part}"
 mkswap -L SWAP "${swap_part}"
 
 if [ "${efi}" -eq 1 ]; then
-	mkfs.fat -F 32 -n boot "${boot_part}"
+	mkfs.fat -F 32 "${boot_part}"
 	fatlabel "${boot_part}" BOOT
 else
 	mkfs.ext4 -L BOOT "${boot_part}"
 fi
 
 # Mount partitions
+# /dev/disk/by-label sometimes works and sometimes doesn't so just use the
+# partition variables I already have instead
+mount "${root_part}" "${mnt_dir}"
+# Change swap partition permissions default 0755 is insecure
+chmod 0600 "${swap_part}"
+swapon "${swap_part}"
 mkdir -p "${boot_dir}"
-# For some reason the arch iso won't find the SWAP and BOOT /dev/disk/by-label
-# but will find ROOT. I don't know why but this is my workaround. Artix does it
-# fine so know idea what the deal is.
-# This is the case as of 2021.10.01 arch release
-if [ "${os}" = arch ]; then
-	# Change swap partition permissions default 0755 is insecure
-	chmod 0600 "${swap_part}"
-
-	mount "${boot_part}" "${boot_dir}"
-	swapon -L SWAP
-elif [ "${os}" = artix ]; then
-	# Change swap partition permissions default 0755 is insecure
-	chmod 0600 /dev/disk/by-label/SWAP
-
-	mount /dev/disk/by-label/BOOT "${boot_dir}"
-	swapon /dev/disk/by-label/SWAP
-fi
-mount /dev/disk/by-label/ROOT "${mnt_dir}"
+mount "${boot_part}" "${boot_dir}"
 
 # Install base system
 if [ "${os}" = arch ]; then
@@ -230,34 +220,34 @@ if [ "${os}" = arch ]; then
 	fi
 elif [ "${os}" = artix ]; then
 	# For some reason artix doesn't install man-db by default?
-	basestrap -c "${mnt_dir}" linux linux-firmware base grub \
+	basestrap "${mnt_dir}" linux linux-firmware base grub \
 		doas vi man-pages man-db git
 	# Don't install sudo since we are using doas
 	# Have to install all members of base-devel manually
 	# I have not found a workaround for this yet
-	basestrap -c "${mnt_dir}" autoconf automake binutils bison esysusers \
+	basestrap "${mnt_dir}" autoconf automake binutils bison esysusers \
 		etmpfiles fakeroot file findutils flex gawk gcc gettext grep groff gzip \
 		libtool m4 make pacman patch pkgconf sed texinfo which
 	case "${init}" in
 		openrc)
-			basestrap -c "${mnt_dir}" openrc elogind-openrc \
+			basestrap "${mnt_dir}" openrc elogind-openrc \
 				connman-openrc iptables-openrc openssh-openrc
 			;;
 		runit)
-			basestrap -c "${mnt_dir}" runit elogind-runit \
+			basestrap "${mnt_dir}" runit elogind-runit \
 				connman-runit iptables-runit openssh-runit
 			;;
 		s6)
-		basestrap -c "${mnt_dir}" s6-base elogind-s6 \
+		basestrap "${mnt_dir}" s6-base elogind-s6 \
 			connman-s6 iptables-s6 openssh-s6
 			;;
 		suite66)
-			basestrap -c "${mnt_dir}" suite66-base elogind-suite66 \
+			basestrap "${mnt_dir}" suite66-base elogind-suite66 \
 				connman-suite66 openssh-suite66
 			;;
 	esac
 	if [ "${efi}" -eq 1 ]; then
-		basestrap -c "${mnt_dir}" efibootmgr
+		basestrap "${mnt_dir}" efibootmgr
 	fi
 fi
 
@@ -265,11 +255,11 @@ fi
 if [ "${enable_lib32_repos}" -eq 1 ]; then
 	case "${os}" in
 		arch)
-			printf "# Enabled by ${prog}\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n" | \
+			printf "# Enabled by ${prog}\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n" |
 				tee -a "${mnt_dir}/etc/pacman.conf"
 			;;
 		artix)
-			printf "# Enabled by ${prog}\n[lib32]\nInclude = /etc/pacman.d/mirrorlist\n" | \
+			printf "# Enabled by ${prog}\n[lib32]\nInclude = /etc/pacman.d/mirrorlist\n" |
 				tee -a "${mnt_dir}/etc/pacman.conf"
 			;;
 	esac
@@ -312,6 +302,9 @@ fi
 
 # Setup hostname
 printf "%s\n" "${host_input}" | tee "${mnt_dir}/etc/hostname"
+if [ "${init}" = openrc ]; then
+	printf "hostname='%s'\n" "${host_input}" | tee "${mnt_dir}/etc/conf.d/hostname"
+fi
 cat <<EOF | tee "${mnt_dir}/etc/hosts"
 127.0.0.1 localhost
 ::1       localhost
@@ -330,11 +323,16 @@ cat <<EOF | tee "${mnt_dir}/etc/locale.conf"
 export LANG="${language}"
 export LC_COLLATE="C"
 EOF
-printf "KEYMAP=us\n" | tee "${mnt_dir}/etc/conf.d/keymaps" \
-	"${mnt_dir}/etc/vconsole.conf"
+printf "KEYMAP=us\n" | tee "${mnt_dir}/etc/vconsole.conf"
+if [ "${os}" = artix ]; then
+	printf "KEYMAP=us\n" | tee "${mnt_dir}/etc/conf.d/keymaps"
+fi
+
+iptables_file="${mnt_dir}/etc/iptables/iptables.rules"
+ip6tables_file="${mnt_dir}/etc/iptables/ip6tables.rules"
 
 # iptables Firewall
-cat <<EOF | tee "${mnt_dir}/etc/iptables/iptables.rules"
+cat <<EOF | tee "${iptables_file}"
 # iptables base configuration
 # Allow outgoing connections and deny all incoming connections
 *filter
@@ -350,7 +348,7 @@ cat <<EOF | tee "${mnt_dir}/etc/iptables/iptables.rules"
 COMMIT
 EOF
 
-cat <<EOF | tee "${mnt_dir}/etc/iptables/ip6tables.rules"
+cat <<EOF | tee "${ip6tables_file}"
 # ip6tables base configuration
 # Deny everything
 *filter
@@ -383,31 +381,42 @@ COMMIT
 :FORWARD DROP [0:0]
 :OUTPUT DROP [0:0]
 :POSTROUTING DROP [0:0]
-else
 COMMIT
 EOF
+
+# Load iptables rules
+iptables-restore < "${iptables_file}" ||
+	printf "ERROR: iptables not restored\n" 1>&2
+ip6tables-restore < "${ip6tables_file}" ||
+	printf "ERROR: ip6tables not restored\n" 1>&2
 
 # Enable services on boot
 case "${init}" in
 	systemd)
 		arch-chroot "${mnt_dir}" systemctl enable --now iptables
+		arch-chroot "${mnt_dir}" systemctl enable --now ip6tables
 		arch-chroot "${mnt_dir}" systemctl enable --now NetworkManager
 		;;
 	openrc)
 		# https://serverfault.com/questions/1059232/what-runlevel-should-ufw-firewall-start-at-in-alpine-linux
 		# Networking starts at boot run level so maybe use boot run level instead?
 		eval "${chroot_cmd}" "${mnt_dir}" rc-update add iptables default
+		eval "${chroot_cmd}" "${mnt_dir}" rc-update add ip6tables default
 		eval "${chroot_cmd}" "${mnt_dir}" rc-update add connmand default
 		;;
 	runit)
 		eval "${chroot_cmd}" "${mnt_dir}" \
 			ln -s /etc/runit/sv/iptables /etc/runit/runsvdir/default
 		eval "${chroot_cmd}" "${mnt_dir}" \
+			ln -s /etc/runit/sv/ip6tables /etc/runit/runsvdir/default
+		eval "${chroot_cmd}" "${mnt_dir}" \
 			ln -s /etc/runit/sv/connmand /etc/runit/runsvdir/default
 		;;
 	s6)
 		eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
 			-c /etc/s6/rc/compiled add default iptables
+		eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
+			-c /etc/s6/rc/compiled add default ip6tables
 		eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
 			-c /etc/s6/rc/compiled add default connmand
 		;;
@@ -418,6 +427,7 @@ case "${init}" in
 		# Need to create default tree first
 		eval "${chroot_cmd}" "${mnt_dir}" 66-tree -ncE default
 		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default iptables
+		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default ip6tables
 		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default connmand
 		;;
 esac
@@ -449,7 +459,14 @@ eval "${chroot_cmd}" "${mnt_dir}" grub-mkconfig \
 	-o "${boot_dir#${mnt_dir}}/grub/grub.cfg"
 
 # Add user
-eval "${chroot_cmd}" "${mnt_dir}" useradd --create-home --user-group "${name_input}"
+# Many of the added groups are not necessary as the permissions they give have
+# been deprecated in favor of udev rules. I have decided to assign them anyway
+# as target system may or may not choose to use udev and systemd. I have just
+# added the user to every concievable group the user may need as they have
+# complete control of the system anyway.
+eval "${chroot_cmd}" "${mnt_dir}" useradd --create-home --user-group \
+	--groups wheel,video,audio,input,disk,storage,floppy,optical,scanner,adm,sys,kvm \
+	"${name_input}"
 printf "%s:%s" "${name_input}" "${password_input}" | chpasswd --root "${mnt_dir}"
 
 case "${su_cmd}" in
