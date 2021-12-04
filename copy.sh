@@ -15,7 +15,7 @@ if [ "${1}" = arch ]; then
 	user="root"
 	dir="/root"
 else
-	user=artix
+	user="artix"
 	dir="/home/${user}"
 fi
 

@@ -1,5 +1,6 @@
 # IUseArchBTW
 **CAUTION: This installation script will partition your drives deleting anything on them**<br  />
+**Please read this script before running it! Running scripts from the internet before reading them is NOT a good idea.**<br  />
 **Also I Use Arch BTW**<br  />
 IUseArchBTW is an installation script for Arch and Artix Linux.
 Supported init systems are systemd for Arch and openrc, runit, s6 and suite66 for Artix.

@@ -12,65 +12,46 @@ if [ "${1}" = "d" ] || [ "${1}" = "debug" ]; then
 	set -x
 fi
 
-mnt_dir="/mnt"
-boot_dir="${mnt_dir}/boot"
-# Path to check if the system is booted as UEFI or BIOS
-efi_path="/sys/firmware/efi/efivars"
-# Directory to mount EFI boot data
-efi=0
-[ -d "${efi_path}" ] && efi=1
+# Values: arch, artix
+os=
+# Values: systemd, openrc, runit, s6, suite66
+init=
 
-# Redirect output to log files
-exec 1> >(tee "out.log")
-exec 2> >(tee "err.log")
+language="en_US.UTF-8"
+timezone="America/New_York"
 
-# Test for our init system and distrobution
-if type "systemctl" > /dev/null 2>&1; then
-	# Assume it is arch if we have systemd
-	os="arch"
-	init="systemd"
-else
-	# Assume it is artix if we have another init system
-	os="artix"
-	if type "rc-update" > /dev/null 2>&1; then
-		init="openrc"
-	elif type "sv" > /dev/null 2>&1; then
-		init="runit"
-	elif type "s6-rc" > /dev/null 2>&1; then
-		init="s6"
-	elif type "66-tree" > /dev/null 2>&1; then
-		init="suite66"
-	else
-		printf "Unsupported or unknown init system\n" 1>&2
+for option in $*; do
+	case "$option" in
+		d | debug)
+			debug=1
+			set -x
+			;;
+		*) init="${option}";;
+	esac
+done
+
+# Check to make sure we have a good init system from passed options
+case "$init" in
+	""|systemd|openrc|runit|s6|suite66) ;;
+	*)
+		printf "Bad init system from command-line argument: '%s'\n" "$init" 1>&2
 		exit 1
-	fi
-fi
+		;;
+esac
 
-# Set os specific variables
-# Using eval "${chroot_cmd}" is not a perfect solution but I explicitly control
-# the variables so there shouldn't be any errors and the only other option I
-# know is to completely rewrite every command with arch-chroot and artix-chroot_cmd
-# which would be extremely redudant and nightmarish to change
-if [ "${os}" = arch ]; then
-	su_cmd="sudo"
-	chroot_cmd="arch-chroot"
-elif [ "${os}" = artix ]; then
-	su_cmd="doas"
-	chroot_cmd="artix-chroot"
-else
-	printf "Unknown os: %s\n" "${os}" 1>&2
-	exit 1
-fi
+command_exists() {
+	command -v "${1}" > /dev/null 2>&1
+}
 
 yes_no() {
 	while :; do
-		printf "$* [y/N]: "
+		printf "%s " "${1}"
+		[ "$2" = no ] && printf "[y/N]: " || printf "[Y/n]: "
 		read -r answer
 		case "${answer}" in
-			# Case insensitive match: n no <nothing>
-			[Nn]|[Nn][Oo]|"") return 1;;
-			# Case insensitive match: y yes
+			[Nn]|[Nn][Oo]) return 1;;
 			[Yy]|[Yy][Ee][Ss]) return 0;;
+			"") [ "$2" = no ] && return 1 || return 0;;
 			*) printf "Please answer [y]es or [n]o\n";;
 		esac
 	done
@@ -90,16 +71,98 @@ get_password() {
 	if [ "${password_input}" = "${password_input_again}" ]; then
 		return 0
 	else
-		printf "\nPasswords do not match please try again.\n"
+		printf "Passwords do not match please try again.\n"
 		get_password
 	fi
 }
 
-# Print os and init information so user can cancel if they want
-printf "Detected operarting system is: %s\n" "${os}"
-printf "Detected init system is: %s\n" "${init}"
+# Example usage: ask "Hello" "there" "General" "Kenobi"
+# Results are stored in the $response variable as you cannot return variables
+# Answers ARE case sensitive
+# Default answer is argument 1
+ask() {
+	printf "%s Default: %s " "$*" "$1"
+	read answer
+	if [ -z "${answer}" ]; then
+		response="${1}"
+		return 0
+	fi
+	for i in $*; do
+		if [ "${answer}" = "${i}" ]; then
+			response="${i}"
+			return 0
+		fi
+	done
+	printf "Found no match please try again.\n"
+	ask $*
+}
 
-language="en_US.UTF-8"
+mnt_dir="/mnt"
+boot_dir="${mnt_dir}/boot"
+# Path to check if the system is booted as UEFI or BIOS
+efi_path="/sys/firmware/efi/efivars"
+# Directory to mount EFI boot data
+efi=0
+[ -d "${efi_path}" ] && efi=1
+
+# Redirect output to log files
+exec 1> >(tee "out.log")
+exec 2> >(tee "err.log")
+
+# Test for our init system and distrobution
+if command_exists "systemctl"; then
+	# Assume it is arch if we have systemd
+	os="arch"
+	init="systemd"
+else
+	# Assume it is artix if we have another init system
+	os="artix"
+	if [ -z "${init}" ]; then
+		if command_exists "rc-update"; then
+			init="openrc"
+		elif command_exists "sv"; then
+			init="runit"
+		elif command_exists "s6-rc"; then
+			init="s6"
+		elif command_exists "66-tree"; then
+			init="suite66"
+		else
+			printf "ERROR: Could not detect a supported init system\n" 1>&2
+			exit 1
+		fi
+	fi
+fi
+
+# Set os specific variables
+# Using eval "${chroot_cmd}" is not a perfect solution but I explicitly control
+# the variables so there shouldn't be any errors and the only other option I
+# know is to completely rewrite every command with arch-chroot and artix-chroot
+# which would be extremely redudant and nightmarish to change
+if [ "${os}" = arch ]; then
+	su_cmd="sudo"
+	chroot_cmd="arch-chroot"
+elif [ "${os}" = artix ]; then
+	su_cmd="doas"
+	chroot_cmd="artix-chroot"
+else
+	printf "Unknown os: '%s'\n" "${os}" 1>&2
+	exit 1
+fi
+
+# Print os and init information so user can cancel if they want
+printf "Detected operarting system is: '%s'\n" "${os}"
+printf "Detected init system is: '%s'\n" "${init}"
+
+# Print os and init information for logging and user interaction
+printf "Detected operarting system is: '%s'\n" "${os}"
+printf "Detected init system is: '%s'\n" "${init}"
+if [ "${debug}" -ne 1 ] && [ "${os}" = artix ]; then
+	printf "Select init system. Default option is detected init system.\n"
+	ask "${init}" openrc runit s6 suite66
+	init="${response}"
+	response=
+fi
+
 enable_lib32_repos=0
 artix_enable_arch_repos=0
 
@@ -118,10 +181,10 @@ else
 	lsblk
 	printf "Enter Disk (Example: /dev/sda): "
 	read -r disk_input
-	yes_no "Enable 32-bit Repositories?" &&
+	yes_no "Enable 32-bit Repositories?" "no" &&
 		enable_lib32_repos=1
 	if [ "${os}" = artix ]; then
-		yes_no "Enable Arch Linux Repositories?" &&
+		yes_no "Enable Arch Linux Repositories?" "no" &&
 			artix_enable_arch_repos=1
 	fi
 fi
@@ -145,12 +208,12 @@ if [ "${os}" = artix ]; then
 fi
 
 # Update package database
-pacman -Syy
+pacman -Syy --noconfirm
 
 # Artix does not come with parted on it's base iso so we have to install it
 # Artix does come with parted on their DE isos (at least with xfce)
 # So check and if it's not available install it
-if ! type "parted" > /dev/null 2>&1; then
+if ! command_exists "parted"; then
 	pacman -S parted --noconfirm
 fi
 
@@ -160,7 +223,7 @@ boot_start="${boot_start_num}MiB"
 if [ "${efi}" -eq 1 ]; then
 	boot_end_num=$(( ${boot_start_num} + 550 ))
 else
-	boot_end_num=$(( ${boot_start_num} + 5 ))
+	boot_end_num=$(( ${boot_start_num} + 100 ))
 fi
 boot_end="${boot_end_num}MiB"
 # Get size of ram in mebibytes
@@ -214,40 +277,40 @@ mount "${boot_part}" "${boot_dir}"
 # Install base system
 if [ "${os}" = arch ]; then
 	pacstrap "${mnt_dir}" linux linux-firmware base base-devel grub \
-		vi networkmanager man-pages openssh iptables git
+		vi networkmanager man-db man-pages openssh iptables git
 	if [ "${efi}" -eq 1 ]; then
 		pacstrap "${mnt_dir}" efibootmgr
 	fi
 elif [ "${os}" = artix ]; then
-	# For some reason artix doesn't install man-db by default?
-	basestrap "${mnt_dir}" linux linux-firmware base grub \
-		doas vi man-pages man-db git
-	# Don't install sudo since we are using doas
-	# Have to install all members of base-devel manually
-	# I have not found a workaround for this yet
-	basestrap "${mnt_dir}" autoconf automake binutils bison esysusers \
-		etmpfiles fakeroot file findutils flex gawk gcc gettext grep groff gzip \
-		libtool m4 make pacman patch pkgconf sed texinfo which
+	basestrap "${mnt_dir}" linux linux-firmware
 	case "${init}" in
 		openrc)
 			basestrap "${mnt_dir}" openrc elogind-openrc \
-				connman-openrc iptables-openrc openssh-openrc
+				networkmanager-openrc iptables-openrc openssh-openrc
 			;;
 		runit)
 			basestrap "${mnt_dir}" runit elogind-runit \
-				connman-runit iptables-runit openssh-runit
+				networkmanager-runit iptables-runit openssh-runit
 			;;
 		s6)
-		basestrap "${mnt_dir}" s6-base elogind-s6 \
-			connman-s6 iptables-s6 openssh-s6
+			basestrap "${mnt_dir}" s6-base elogind-s6 \
+				networkmanager-s6 iptables-s6 openssh-s6
 			;;
 		suite66)
 			basestrap "${mnt_dir}" suite66-base elogind-suite66 \
-				connman-suite66 openssh-suite66
+				networkmanager-suite66 openssh-suite66
 			;;
 	esac
 	if [ "${efi}" -eq 1 ]; then
 		basestrap "${mnt_dir}" efibootmgr
+	fi
+	basestrap "${mnt_dir}" base grub doas vi man-db man-pages git
+	if [ "${su_cmd}" != sudo ]; then
+		# Use pacman so we can exclude sudo but get the rest of base-devel
+		pacman -S --groups --quiet base-devel | grep -Fvx sudo |
+			pacman -S --noconfirm --needed --root "${mnt_dir}" -
+	else
+		basestrap "${mnt_dir}" base-devel
 	fi
 fi
 
@@ -255,12 +318,20 @@ fi
 if [ "${enable_lib32_repos}" -eq 1 ]; then
 	case "${os}" in
 		arch)
-			printf "# Enabled by ${prog}\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n" |
-				tee -a "${mnt_dir}/etc/pacman.conf"
+			cat <<EOF | tee -a "${mnt_dir}/etc/pacman.conf"
+
+# Enabled by ${prog}
+[multilib]
+Include = /etc/pacman.d/mirrorlist
+EOF
 			;;
 		artix)
-			printf "# Enabled by ${prog}\n[lib32]\nInclude = /etc/pacman.d/mirrorlist\n" |
-				tee -a "${mnt_dir}/etc/pacman.conf"
+			cat <<EOF | tee -a "${mnt_dir}/etc/pacman.conf"
+
+# Enabled by ${prog}
+[lib32]
+Include = /etc/pacman.d/mirrorlist
+EOF
 			;;
 	esac
 fi
@@ -271,7 +342,7 @@ if [ "${artix_enable_arch_repos}" -eq 1 ]; then
 cat <<EOF | tee -a "${mnt_dir}/etc/pacman.conf"
 
 # Enabled by ${prog}
-# ARCH
+# Arch Linux Repositories
 #[testing]
 #Include = /etc/pacman.d/mirrorlist-arch
 
@@ -294,11 +365,10 @@ EOF
 fi
 
 # Generate fstab
-if [ "${os}" = arch ]; then
-	genfstab -U "${mnt_dir}" | tee "${mnt_dir}/etc/fstab"
-elif [ "${os}" = artix ]; then
-	fstabgen -U "${mnt_dir}" | tee "${mnt_dir}/etc/fstab"
-fi
+case "$os" in
+	arch) genfstab -U "${mnt_dir}" | tee "${mnt_dir}/etc/fstab";;
+	artix) fstabgen -U "${mnt_dir}" | tee "${mnt_dir}/etc/fstab";;
+esac
 
 # Setup hostname
 printf "%s\n" "${host_input}" | tee "${mnt_dir}/etc/hostname"
@@ -312,7 +382,7 @@ cat <<EOF | tee "${mnt_dir}/etc/hosts"
 EOF
 
 # Set time zone
-eval "${chroot_cmd}" "${mnt_dir}" ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
+eval "${chroot_cmd}" "${mnt_dir}" ln -sf /usr/share/zoneinfo/"${timezone}" /etc/localtime
 # Run hwclock to generate /etc/adjtime
 eval "${chroot_cmd}" "${mnt_dir}" hwclock --systohc
 
@@ -333,6 +403,7 @@ ip6tables_file="${mnt_dir}/etc/iptables/ip6tables.rules"
 
 # iptables Firewall
 cat <<EOF | tee "${iptables_file}"
+# Generated by ${prog}
 # iptables base configuration
 # Allow outgoing connections and deny all incoming connections
 *filter
@@ -349,6 +420,7 @@ COMMIT
 EOF
 
 cat <<EOF | tee "${ip6tables_file}"
+# Generated by ${prog}
 # ip6tables base configuration
 # Deny everything
 *filter
@@ -402,7 +474,7 @@ case "${init}" in
 		# Networking starts at boot run level so maybe use boot run level instead?
 		eval "${chroot_cmd}" "${mnt_dir}" rc-update add iptables default
 		eval "${chroot_cmd}" "${mnt_dir}" rc-update add ip6tables default
-		eval "${chroot_cmd}" "${mnt_dir}" rc-update add connmand default
+		eval "${chroot_cmd}" "${mnt_dir}" rc-update add NetworkManager default
 		;;
 	runit)
 		eval "${chroot_cmd}" "${mnt_dir}" \
@@ -410,7 +482,7 @@ case "${init}" in
 		eval "${chroot_cmd}" "${mnt_dir}" \
 			ln -s /etc/runit/sv/ip6tables /etc/runit/runsvdir/default
 		eval "${chroot_cmd}" "${mnt_dir}" \
-			ln -s /etc/runit/sv/connmand /etc/runit/runsvdir/default
+			ln -s /etc/runit/sv/NetworkManager /etc/runit/runsvdir/default
 		;;
 	s6)
 		eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
@@ -418,7 +490,7 @@ case "${init}" in
 		eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
 			-c /etc/s6/rc/compiled add default ip6tables
 		eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
-			-c /etc/s6/rc/compiled add default connmand
+			-c /etc/s6/rc/compiled add default NetworkManager
 		;;
 	suite66)
 		# suite66 needs some special setup
@@ -428,22 +500,23 @@ case "${init}" in
 		eval "${chroot_cmd}" "${mnt_dir}" 66-tree -ncE default
 		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default iptables
 		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default ip6tables
-		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default connmand
+		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default NetworkManager
 		;;
 esac
 
-# Have to add iptables as a module otherwise we get error when shutting down or rebooting saying:
-# your kernel lacks iptables support please load appropriate kernel modules and try agian
-# ERROR: iptables failed to stop
+# Have to add iptables as a module otherwise we get error when shutting down or
+# rebooting saying: your kernel lacks iptables support please load appropriate
+# kernel modules and try agian ERROR: iptables failed to stop
 # So we tell the kernel to load iptables module
 # https://forums.funtoo.org/topic/884-about-ip6tables/
 # https://forum.artixlinux.org/index.php/topic,2035.0.html
-if [ "${os}" = artix ]; then
+if [ "${init}" = openrc ]; then
 	# Tell the kernel to load the ip_tables and ip6_tables modules at boot
 	# systemd handles this a different way and it seems the arch kernel is setup
-	# to load ip_tables be default but not artix
-	printf 'modules="ip_tables ip6_tables"\n' | tee -a "${mnt_dir}/etc/conf.d/modules"
-	# Save the iptables rulse
+	# to load ip_tables by default but not artix
+	printf 'modules="ip_tables ip6_tables"\n' |
+		tee -a "${mnt_dir}/etc/conf.d/modules"
+	# Save the iptables rules
 	eval "${chroot_cmd}" "${mnt_dir}" /etc/init.d/iptables save
 	eval "${chroot_cmd}" "${mnt_dir}" /etc/init.d/ip6tables save
 fi
@@ -465,13 +538,13 @@ eval "${chroot_cmd}" "${mnt_dir}" grub-mkconfig \
 # added the user to every concievable group the user may need as they have
 # complete control of the system anyway.
 eval "${chroot_cmd}" "${mnt_dir}" useradd --create-home --user-group \
-	--groups wheel,video,audio,input,disk,storage,floppy,optical,scanner,adm,sys,kvm \
+	--groups wheel,users,power,network,log,video,audio,input,disk,storage,floppy,optical,scanner,adm,sys,kvm \
 	"${name_input}"
 printf "%s:%s" "${name_input}" "${password_input}" | chpasswd --root "${mnt_dir}"
 
 case "${su_cmd}" in
 	sudo)
-		printf "%s ALL=(ALL) ALL\n" "${name_input}" | tee -a "${mnt_dir}/etc/sudoers"
+		printf "\n%s ALL=(ALL) ALL\n" "${name_input}" | tee -a "${mnt_dir}/etc/sudoers"
 		;;
 	doas)
 		printf "permit %s\n" "${name_input}" | tee "${mnt_dir}/etc/doas.conf"
@@ -487,8 +560,13 @@ usermod --root "${mnt_dir}" --lock root ||
 	printf "ERROR: could not lock root user\n" 1>&2
 usermod --root "${mnt_dir}" --expiredate 1 root ||
 	printf "ERROR: could not set root user expiredate\n" 1>&2
+# Disable ssh with root user
+printf "\nPermitRootLogin no\n" | tee -a "${mnt_dir}/etc/ssh/sshd_config" ||
+	printf "ERROR: could not disable ssh login with root user\n" 1>&2
 
-umount -R "${mnt_dir}" ||
-	printf "ERROR: umount error with '%s'\n" "${mnt_dir}" 1>&2
+if [ "${debug}" -ne 1 ]; then
+	umount -R "${mnt_dir}" ||
+		printf "ERROR: umount error with '%s'\n" "${mnt_dir}" 1>&2
+fi
 
 printf "All Done Hopefully It Works\n"
