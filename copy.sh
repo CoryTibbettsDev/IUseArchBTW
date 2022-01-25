@@ -21,3 +21,5 @@ fi
 
 scp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
 	IUseArchBTW "${user}"@127.0.0.1:"${dir}"
+
+set +x

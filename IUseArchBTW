@@ -4,14 +4,6 @@
 
 prog="IUseArchBTW"
 
-# Enable debugging and testing
-# Example: sh IUseArchBTW debug
-debug=0
-if [ "${1}" = "d" ] || [ "${1}" = "debug" ]; then
-	debug=1
-	set -x
-fi
-
 # Values: arch, artix
 os=
 # Values: systemd, openrc, runit, s6, suite66
@@ -19,6 +11,10 @@ init=
 
 language="en_US.UTF-8"
 timezone="America/New_York"
+
+# Enable debugging and testing
+# Example: sh IUseArchBTW debug
+debug=0
 
 for option in $*; do
 	case "$option" in
@@ -80,6 +76,8 @@ get_password() {
 # Results are stored in the $response variable as you cannot return variables
 # Answers ARE case sensitive
 # Default answer is argument 1
+# This function results in duplicate entry in the list need to find away to
+# prevent that to make it look nicer
 ask() {
 	printf "%s Default: %s " "$*" "$1"
 	read answer
@@ -168,19 +166,20 @@ artix_enable_arch_repos=0
 
 if [ "${debug}" -eq 1 ]; then
 	# Preset variables for testing
-	host_input="IUseArchBTW"
-	name_input="test"
-	password_input="test"
-	disk_input="/dev/sda"
+	hostname="IUseArchBTW"
+	username="test"
+	password="test"
+	disk="/dev/sda"
 else
 	printf "Enter Hostname (Name of the Computer): "
-	read -r host_input
+	read -r hostname
 	printf "Enter Username: "
-	read -r name_input
+	read -r username
 	get_password
+	password="${password_input}"
 	lsblk
 	printf "Enter Disk (Example: /dev/sda): "
-	read -r disk_input
+	read -r disk
 	yes_no "Enable 32-bit Repositories?" "no" &&
 		enable_lib32_repos=1
 	if [ "${os}" = artix ]; then
@@ -235,18 +234,18 @@ boot_part_num=1
 swap_part_num=2
 root_part_num=3
 
-boot_part="${disk_input}${boot_part_num}"
-swap_part="${disk_input}${swap_part_num}"
-root_part="${disk_input}${root_part_num}"
+boot_part="${disk}${boot_part_num}"
+swap_part="${disk}${swap_part_num}"
+root_part="${disk}${root_part_num}"
 
 if [ "${efi}" -eq 1 ]; then
-	parted --script "${disk_input}" -- mklabel gpt \
+	parted --script "${disk}" -- mklabel gpt \
 		mkpart BOOTPART fat32 "${boot_start}" "${boot_end}" \
 		mkpart SWAPPART linux-swap "${boot_end}" "${swap_end}" \
 		mkpart ROOTPART ext4 "${swap_end}" 100% \
 		set "${boot_part_num}" esp on || exit 1
 else
-	parted --script "${disk_input}" -- mklabel msdos \
+	parted --script "${disk}" -- mklabel msdos \
 		mkpart primary ext4 "${boot_start}" "${boot_end}" \
 		mkpart primary linux-swap "${boot_end}" "${swap_end}" \
 		mkpart primary ext4 "${swap_end}" 100% \
@@ -282,7 +281,6 @@ if [ "${os}" = arch ]; then
 		pacstrap "${mnt_dir}" efibootmgr
 	fi
 elif [ "${os}" = artix ]; then
-	basestrap "${mnt_dir}" linux linux-firmware
 	case "${init}" in
 		openrc)
 			basestrap "${mnt_dir}" openrc elogind-openrc \
@@ -312,6 +310,11 @@ elif [ "${os}" = artix ]; then
 	else
 		basestrap "${mnt_dir}" base-devel
 	fi
+	# Need sed for mkinitcpio hook script but since we do not install base-devel
+	# group at the same time as linux there is no sed for when the script runs
+	# so it fails. Work around is to install linux mkinitcpio script:
+	# /usr/share/libalpm/scripts/mkinitcpio-install
+	basestrap "${mnt_dir}" linux linux-firmware
 fi
 
 # Enable 32-bit repositories
@@ -371,14 +374,14 @@ case "$os" in
 esac
 
 # Setup hostname
-printf "%s\n" "${host_input}" | tee "${mnt_dir}/etc/hostname"
+printf "%s\n" "${hostname}" | tee "${mnt_dir}/etc/hostname"
 if [ "${init}" = openrc ]; then
-	printf "hostname='%s'\n" "${host_input}" | tee "${mnt_dir}/etc/conf.d/hostname"
+	printf "hostname='%s'\n" "${hostname}" | tee "${mnt_dir}/etc/conf.d/hostname"
 fi
 cat <<EOF | tee "${mnt_dir}/etc/hosts"
 127.0.0.1 localhost
 ::1       localhost
-127.0.1.1 ${host_input}.localdomain ${host_input}
+127.0.1.1 ${hostname}.localdomain ${hostname}
 EOF
 
 # Set time zone
@@ -525,29 +528,29 @@ if [ "${efi}" -eq 1 ]; then
 	eval "${chroot_cmd}" "${mnt_dir}" grub-install --target=x86_64-efi \
 		--efi-directory="${boot_dir#${mnt_dir}}" --bootloader-id=grub
 else
-	eval "${chroot_cmd}" "${mnt_dir}" grub-install \
-		--boot-directory="${boot_dir#${mnt_dir}}" "${disk_input}"
+	# eval "${chroot_cmd}" "${mnt_dir}" grub-install \
+	# 	--boot-directory="${boot_dir#${mnt_dir}}" "${disk}"
+	eval "${chroot_cmd}" "${mnt_dir}" grub-install "${disk}"
 fi
 eval "${chroot_cmd}" "${mnt_dir}" grub-mkconfig \
 	-o "${boot_dir#${mnt_dir}}/grub/grub.cfg"
 
 # Add user
-# Many of the added groups are not necessary as the permissions they give have
-# been deprecated in favor of udev rules. I have decided to assign them anyway
-# as target system may or may not choose to use udev and systemd. I have just
-# added the user to every concievable group the user may need as they have
-# complete control of the system anyway.
+# kvm needed for QEMU with kvm
+# sys group is needed for printing with cups
 eval "${chroot_cmd}" "${mnt_dir}" useradd --create-home --user-group \
-	--groups wheel,users,power,network,log,video,audio,input,disk,storage,floppy,optical,scanner,adm,sys,kvm \
-	"${name_input}"
-printf "%s:%s" "${name_input}" "${password_input}" | chpasswd --root "${mnt_dir}"
+	--groups wheel,kvm,sys \
+	"${username}"
+printf "%s:%s" "${username}" "${password}" | chpasswd --root "${mnt_dir}"
 
 case "${su_cmd}" in
 	sudo)
-		printf "\n%s ALL=(ALL) ALL\n" "${name_input}" | tee -a "${mnt_dir}/etc/sudoers"
+		printf "\n%s ALL=(ALL) ALL\n" "${username}" |
+			tee -a "${mnt_dir}/etc/sudoers"
 		;;
 	doas)
-		printf "permit %s\n" "${name_input}" | tee "${mnt_dir}/etc/doas.conf"
+		printf "permit persist keepenv %s\n" "${username}" |
+			tee "${mnt_dir}/etc/doas.conf"
 		;;
 	*)
 		printf "ERROR: Unsupported or null su_cmd '%s'\n" "${su_cmd}" 1>&2
@@ -555,7 +558,6 @@ case "${su_cmd}" in
 esac
 
 # Disable root user
-printf "%s:%s" "root" "RANDOMNOTHINGNESS" | chpasswd --root "${mnt_dir}"
 usermod --root "${mnt_dir}" --lock root ||
 	printf "ERROR: could not lock root user\n" 1>&2
 usermod --root "${mnt_dir}" --expiredate 1 root ||
@@ -567,6 +569,10 @@ printf "\nPermitRootLogin no\n" | tee -a "${mnt_dir}/etc/ssh/sshd_config" ||
 if [ "${debug}" -ne 1 ]; then
 	umount -R "${mnt_dir}" ||
 		printf "ERROR: umount error with '%s'\n" "${mnt_dir}" 1>&2
+	swapoff -a ||
+		printf "ERROR: swapoff -a error with '%s'\n" "${mnt_dir}" 1>&2
+else
+	set +x
 fi
 
 printf "All Done Hopefully It Works\n"
