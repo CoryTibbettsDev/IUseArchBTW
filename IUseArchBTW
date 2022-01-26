@@ -234,9 +234,23 @@ boot_part_num=1
 swap_part_num=2
 root_part_num=3
 
-boot_part="${disk}${boot_part_num}"
-swap_part="${disk}${swap_part_num}"
-root_part="${disk}${root_part_num}"
+boot_part="${disk}"
+swap_part="${disk}"
+root_part="${disk}"
+# nvme drives have a "p" in front of the partition number
+# https://unix.stackexchange.com/questions/452120/persistent-device-naming-for-nvme-storage-devices
+# The NVMe naming standard describes:
+# nvme0: first registered device's device controller
+# nvme0n1: first registered device's first namespace
+# nvme0n1p1: first registered device's first namespace's first partition
+if [ "${disk%[0-9]n[0-9]}" = "/dev/nvme" ]; then
+	boot_part="${boot_part}p"
+	swap_part="${swap_part}p"
+	root_part="${root_part}p"
+fi
+boot_part="${boot_part}${boot_part_num}"
+swap_part="${swap_part}${swap_part_num}"
+root_part="${root_part}${root_part_num}"
 
 if [ "${efi}" -eq 1 ]; then
 	parted --script "${disk}" -- mklabel gpt \
