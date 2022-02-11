@@ -79,7 +79,7 @@ get_password() {
 # This function results in duplicate entry in the list need to find away to
 # prevent that to make it look nicer
 ask() {
-	printf "%s Default: %s " "$*" "$1"
+	printf "%s [Default: %s] " "$*" "$1"
 	read answer
 	if [ -z "${answer}" ]; then
 		response="${1}"
@@ -225,17 +225,11 @@ else
 	boot_end_num=$(( ${boot_start_num} + 100 ))
 fi
 boot_end="${boot_end_num}MiB"
-# Get size of ram in mebibytes
-ram_size="$(free --mebi | awk '/Mem:/ {print $2}')"
-swap_end_num=$(( ${boot_end_num} + ${ram_size} ))
-swap_end="${swap_end_num}MiB"
 
 boot_part_num=1
-swap_part_num=2
-root_part_num=3
+root_part_num=2
 
 boot_part="${disk}"
-swap_part="${disk}"
 root_part="${disk}"
 # nvme drives have a "p" in front of the partition number
 # https://unix.stackexchange.com/questions/452120/persistent-device-naming-for-nvme-storage-devices
@@ -245,30 +239,26 @@ root_part="${disk}"
 # nvme0n1p1: first registered device's first namespace's first partition
 if [ "${disk%[0-9]n[0-9]}" = "/dev/nvme" ]; then
 	boot_part="${boot_part}p"
-	swap_part="${swap_part}p"
 	root_part="${root_part}p"
 fi
 boot_part="${boot_part}${boot_part_num}"
-swap_part="${swap_part}${swap_part_num}"
 root_part="${root_part}${root_part_num}"
+swap_file="${mnt_dir}/swapfile"
 
 if [ "${efi}" -eq 1 ]; then
 	parted --script "${disk}" -- mklabel gpt \
 		mkpart BOOTPART fat32 "${boot_start}" "${boot_end}" \
-		mkpart SWAPPART linux-swap "${boot_end}" "${swap_end}" \
-		mkpart ROOTPART ext4 "${swap_end}" 100% \
+		mkpart ROOTPART ext4 "${boot_end}" 100% \
 		set "${boot_part_num}" esp on || exit 1
 else
 	parted --script "${disk}" -- mklabel msdos \
 		mkpart primary ext4 "${boot_start}" "${boot_end}" \
-		mkpart primary linux-swap "${boot_end}" "${swap_end}" \
-		mkpart primary ext4 "${swap_end}" 100% \
+		mkpart primary ext4 "${boot_end}" 100% \
 		set "${boot_part_num}" boot on || exit 1
 fi
 
 # Make filesystems
 mkfs.ext4 -L ROOT "${root_part}"
-mkswap -L SWAP "${swap_part}"
 
 if [ "${efi}" -eq 1 ]; then
 	mkfs.fat -F 32 "${boot_part}"
@@ -281,11 +271,16 @@ fi
 # /dev/disk/by-label sometimes works and sometimes doesn't so just use the
 # partition variables I already have instead
 mount "${root_part}" "${mnt_dir}"
-# Change swap partition permissions default 0755 is insecure
-chmod 0600 "${swap_part}"
-swapon "${swap_part}"
 mkdir -p "${boot_dir}"
 mount "${boot_part}" "${boot_dir}"
+# Make swap file
+# Get size of ram in mebibytes
+ram_size="$(free --mebi | awk '/Mem:/ {print $2}')"
+dd if=/dev/zero of="${swap_file}" bs=1M count="${ram_size}"
+# Change swap permissions default 0755 is insecure
+chmod 0600 "${swap_file}"
+mkswap "${swap_file}"
+swapon "${swap_file}"
 
 # Install base system
 if [ "${os}" = arch ]; then
@@ -386,6 +381,8 @@ case "$os" in
 	arch) genfstab -U "${mnt_dir}" | tee "${mnt_dir}/etc/fstab";;
 	artix) fstabgen -U "${mnt_dir}" | tee "${mnt_dir}/etc/fstab";;
 esac
+# Add swapfile to fstab
+printf "${swap_file#${mnt_dir}} none swap defaults 0 0\n" | tee -a "${mnt_dir}/etc/fstab"
 
 # Setup hostname
 printf "%s\n" "${hostname}" | tee "${mnt_dir}/etc/hostname"
@@ -583,8 +580,6 @@ printf "\nPermitRootLogin no\n" | tee -a "${mnt_dir}/etc/ssh/sshd_config" ||
 if [ "${debug}" -ne 1 ]; then
 	umount -R "${mnt_dir}" ||
 		printf "ERROR: umount error with '%s'\n" "${mnt_dir}" 1>&2
-	swapoff -a ||
-		printf "ERROR: swapoff -a error with '%s'\n" "${mnt_dir}" 1>&2
 else
 	set +x
 fi
