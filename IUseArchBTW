@@ -412,8 +412,9 @@ if [ "${os}" = artix ]; then
 	printf "KEYMAP=us\n" | tee "${mnt_dir}/etc/conf.d/keymaps"
 fi
 
-iptables_file="${mnt_dir}/etc/iptables/iptables.rules"
-ip6tables_file="${mnt_dir}/etc/iptables/ip6tables.rules"
+iptables_dir="${mnt_dir}/etc/iptables.d"
+iptables_file="${iptables_dir}/iptables.rules"
+ip6tables_file="${iptables_dir}/ip6tables.rules"
 
 # iptables Firewall
 cat <<EOF | tee "${iptables_file}"
