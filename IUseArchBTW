@@ -477,9 +477,9 @@ ip6tables-restore < "${ip6tables_file}" ||
 # Enable services on boot
 case "${init}" in
 	systemd)
-		arch-chroot "${mnt_dir}" systemctl enable --now iptables
-		arch-chroot "${mnt_dir}" systemctl enable --now ip6tables
-		arch-chroot "${mnt_dir}" systemctl enable --now NetworkManager
+		arch-chroot "${mnt_dir}" systemctl enable iptables
+		arch-chroot "${mnt_dir}" systemctl enable ip6tables
+		arch-chroot "${mnt_dir}" systemctl enable NetworkManager
 		;;
 	openrc)
 		# https://serverfault.com/questions/1059232/what-runlevel-should-ufw-firewall-start-at-in-alpine-linux
