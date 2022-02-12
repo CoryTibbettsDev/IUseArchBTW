@@ -23,10 +23,12 @@ You can copy the script to another computer with `scp`<br  />
 ## Artix
 ### Tested
 - openrc 20210726
+- runit 20220123
+- s6 20220123
 ### Untested
-- runit
-- s6
 - suite66
+### Unsupported
+- dinit
 
 # Useful Links
 [Size of EFI Partition](https://askubuntu.com/questions/1313154/how-to-know-the-proper-amount-of-needed-disk-space-for-efi-partition)<br  />

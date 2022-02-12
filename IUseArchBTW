@@ -4,9 +4,7 @@
 
 prog="IUseArchBTW"
 
-# Values: arch, artix
 os=
-# Values: systemd, openrc, runit, s6, suite66
 init=
 
 language="en_US.UTF-8"
@@ -321,12 +319,11 @@ elif [ "${os}" = artix ]; then
 	fi
 	# Need sed for mkinitcpio hook script but since we do not install base-devel
 	# group at the same time as linux there is no sed for when the script runs
-	# so it fails. Work around is to install linux mkinitcpio script:
-	# /usr/share/libalpm/scripts/mkinitcpio-install
+	# so it fails. Work around is to install linux after sed/base-devel
+	# mkinitcpio script: /usr/share/libalpm/scripts/mkinitcpio-install
 	basestrap "${mnt_dir}" linux linux-firmware
 fi
 
-# Enable 32-bit repositories
 if [ "${enable_lib32_repos}" -eq 1 ]; then
 	case "${os}" in
 		arch)
@@ -412,7 +409,7 @@ if [ "${os}" = artix ]; then
 	printf "KEYMAP=us\n" | tee "${mnt_dir}/etc/conf.d/keymaps"
 fi
 
-iptables_dir="${mnt_dir}/etc/iptables.d"
+iptables_dir="${mnt_dir}/etc/iptables"
 iptables_file="${iptables_dir}/iptables.rules"
 ip6tables_file="${iptables_dir}/ip6tables.rules"
 
@@ -500,19 +497,18 @@ case "${init}" in
 			ln -s /etc/runit/sv/NetworkManager /etc/runit/runsvdir/default
 		;;
 	s6)
-		eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
-			-c /etc/s6/rc/compiled add default iptables
-		eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
-			-c /etc/s6/rc/compiled add default ip6tables
-		eval "${chroot_cmd}" "${mnt_dir}" s6-rc-bundle-update \
-			-c /etc/s6/rc/compiled add default NetworkManager
+		touch "${mnt_dir}/etc/s6/adminsv/default/contents.d/iptables"
+		touch "${mnt_dir}/etc/s6/adminsv/default/contents.d/ip6tables"
+		touch "${mnt_dir}/etc/s6/adminsv/default/contents.d/NetworkManager"
+		eval "${chroot_cmd}" "${mnt_dir}" s6-db-reload
 		;;
 	suite66)
+		# No longer need to create boot and default trees
 		# suite66 needs some special setup
-		eval "${chroot_cmd}" "${mnt_dir}" 66-tree -n boot
-		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t boot boot@system
-		# Need to create default tree first
-		eval "${chroot_cmd}" "${mnt_dir}" 66-tree -ncE default
+		# eval "${chroot_cmd}" "${mnt_dir}" 66-tree -n boot
+		# eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t boot boot@system
+		# # Need to create default tree first
+		# eval "${chroot_cmd}" "${mnt_dir}" 66-tree -ncE default
 		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default iptables
 		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default ip6tables
 		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default NetworkManager
