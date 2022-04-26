@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# IUseArchBTW
+set -e
 
 prog="IUseArchBTW"
 
@@ -10,23 +10,35 @@ init=
 language="en_US.UTF-8"
 timezone="America/New_York"
 
+mnt_dir="/mnt"
+boot_dir="${mnt_dir}/boot"
+# Path to check if the system is booted as UEFI or BIOS
+efi_path="/sys/firmware/efi/efivars"
+# Directory to mount EFI boot data
+efi=0
+[ -d "${efi_path}" ] && efi=1
+
 # Enable debugging and testing
 # Example: sh IUseArchBTW debug
 debug=0
 
-for option in $*; do
-	case "$option" in
-		d | debug)
+while getopts "dhi:" opt; do
+	case "${opt}" in
+		h)
+			printf "%s: Usage: [-d] [-i init]\n" "$0"
+			exit 0
+			;;
+		d)
 			debug=1
 			set -x
 			;;
-		*) init="${option}";;
+		i) init="${OPTARG}";;
 	esac
 done
 
 # Check to make sure we have a good init system from passed options
 case "$init" in
-	""|systemd|openrc|runit|s6|suite66) ;;
+	""|systemd|openrc|runit|s6) ;;
 	*)
 		printf "Bad init system from command-line argument: '%s'\n" "$init" 1>&2
 		exit 1
@@ -93,328 +105,273 @@ ask() {
 	ask $*
 }
 
-mnt_dir="/mnt"
-boot_dir="${mnt_dir}/boot"
-# Path to check if the system is booted as UEFI or BIOS
-efi_path="/sys/firmware/efi/efivars"
-# Directory to mount EFI boot data
-efi=0
-[ -d "${efi_path}" ] && efi=1
-
-# Redirect output to log files
-exec 1> >(tee "out.log")
-exec 2> >(tee "err.log")
-
-# Test for our init system and distrobution
-if command_exists "systemctl"; then
-	# Assume it is arch if we have systemd
-	os="arch"
-	init="systemd"
-else
-	# Assume it is artix if we have another init system
-	os="artix"
-	if [ -z "${init}" ]; then
-		if command_exists "rc-update"; then
-			init="openrc"
-		elif command_exists "sv"; then
-			init="runit"
-		elif command_exists "s6-rc"; then
-			init="s6"
-		elif command_exists "66-tree"; then
-			init="suite66"
-		else
-			printf "ERROR: Could not detect a supported init system\n" 1>&2
-			exit 1
+# must be called first to set important variables
+detect_os_and_init() {
+	# Test for our init system and distrobution
+	if command_exists "systemctl"; then
+		# Assume it is arch if we have systemd
+		os="arch"
+		init="systemd"
+	else
+		# Assume it is artix if we have another init system
+		os="artix"
+		if [ -z "${init}" ]; then
+			if command_exists "rc-update"; then
+				init="openrc"
+			elif command_exists "sv"; then
+				init="runit"
+			elif command_exists "s6-rc"; then
+				init="s6"
+			else
+				printf "ERROR: Could not detect a supported init system\n" 1>&2
+				exit 1
+			fi
 		fi
 	fi
-fi
 
-# Set os specific variables
-# Using eval "${chroot_cmd}" is not a perfect solution but I explicitly control
-# the variables so there shouldn't be any errors and the only other option I
-# know is to completely rewrite every command with arch-chroot and artix-chroot
-# which would be extremely redudant and nightmarish to change
-if [ "${os}" = arch ]; then
-	su_cmd="sudo"
-	chroot_cmd="arch-chroot"
-elif [ "${os}" = artix ]; then
-	su_cmd="doas"
-	chroot_cmd="artix-chroot"
-else
-	printf "Unknown os: '%s'\n" "${os}" 1>&2
-	exit 1
-fi
-
-# Print os and init information so user can cancel if they want
-printf "Detected operarting system is: '%s'\n" "${os}"
-printf "Detected init system is: '%s'\n" "${init}"
-
-# Print os and init information for logging and user interaction
-printf "Detected operarting system is: '%s'\n" "${os}"
-printf "Detected init system is: '%s'\n" "${init}"
-if [ "${debug}" -ne 1 ] && [ "${os}" = artix ]; then
-	printf "Select init system. Default option is detected init system.\n"
-	ask "${init}" openrc runit s6 suite66
-	init="${response}"
-	response=
-fi
-
-enable_lib32_repos=0
-artix_enable_arch_repos=0
-
-if [ "${debug}" -eq 1 ]; then
-	# Preset variables for testing
-	hostname="IUseArchBTW"
-	username="test"
-	password="test"
-	disk="/dev/sda"
-else
-	printf "Enter Hostname (Name of the Computer): "
-	read -r hostname
-	printf "Enter Username: "
-	read -r username
-	get_password
-	password="${password_input}"
-	lsblk
-	printf "Enter Disk (Example: /dev/sda): "
-	read -r disk
-	yes_no "Enable 32-bit Repositories?" "no" &&
-		enable_lib32_repos=1
-	if [ "${os}" = artix ]; then
-		yes_no "Enable Arch Linux Repositories?" "no" &&
-			artix_enable_arch_repos=1
-	fi
-fi
-
-if [ "${os}" = arch ]; then
-	timedatectl set-ntp true
-fi
-
-# Artix throws an error that target disk is in use if there is a swap partition
-# on the said target disk. Arch will not though? idk
-# Find the swap partition and turn it off
-# This will turn off the first active swap partition it finds which may not be
-# the right one but not many people will have multiple disks in their machines
-# that have active swap partitions on them and who is using my script anyway?
-# Wish there was a better way though
-if [ "${os}" = artix ]; then
-	old_swap="$(swapon --show | awk 'FNR==2{print $1}')"
-	if [ -n "${old_swap}" ]; then
-		swapoff "${old_swap}"
-	fi
-fi
-
-# Update package database
-pacman -Syy --noconfirm
-
-# Artix does not come with parted on it's base iso so we have to install it
-# Artix does come with parted on their DE isos (at least with xfce)
-# So check and if it's not available install it
-if ! command_exists "parted"; then
-	pacman -S parted --noconfirm
-fi
-
-# Partitioning (It's annoying)
-boot_start_num=1
-boot_start="${boot_start_num}MiB"
-if [ "${efi}" -eq 1 ]; then
-	boot_end_num=$(( ${boot_start_num} + 550 ))
-else
-	boot_end_num=$(( ${boot_start_num} + 100 ))
-fi
-boot_end="${boot_end_num}MiB"
-
-boot_part_num=1
-root_part_num=2
-
-boot_part="${disk}"
-root_part="${disk}"
-# nvme drives have a "p" in front of the partition number
-# https://unix.stackexchange.com/questions/452120/persistent-device-naming-for-nvme-storage-devices
-# The NVMe naming standard describes:
-# nvme0: first registered device's device controller
-# nvme0n1: first registered device's first namespace
-# nvme0n1p1: first registered device's first namespace's first partition
-if [ "${disk%[0-9]n[0-9]}" = "/dev/nvme" ]; then
-	boot_part="${boot_part}p"
-	root_part="${root_part}p"
-fi
-boot_part="${boot_part}${boot_part_num}"
-root_part="${root_part}${root_part_num}"
-swap_file="${mnt_dir}/swapfile"
-
-if [ "${efi}" -eq 1 ]; then
-	parted --script "${disk}" -- mklabel gpt \
-		mkpart BOOTPART fat32 "${boot_start}" "${boot_end}" \
-		mkpart ROOTPART ext4 "${boot_end}" 100% \
-		set "${boot_part_num}" esp on || exit 1
-else
-	parted --script "${disk}" -- mklabel msdos \
-		mkpart primary ext4 "${boot_start}" "${boot_end}" \
-		mkpart primary ext4 "${boot_end}" 100% \
-		set "${boot_part_num}" boot on || exit 1
-fi
-
-# Make filesystems
-mkfs.ext4 -L ROOT "${root_part}"
-
-if [ "${efi}" -eq 1 ]; then
-	mkfs.fat -F 32 "${boot_part}"
-	fatlabel "${boot_part}" BOOT
-else
-	mkfs.ext4 -L BOOT "${boot_part}"
-fi
-
-# Mount partitions
-# /dev/disk/by-label sometimes works and sometimes doesn't so just use the
-# partition variables I already have instead
-mount "${root_part}" "${mnt_dir}"
-mkdir -p "${boot_dir}"
-mount "${boot_part}" "${boot_dir}"
-# Make swap file
-# Get size of ram in mebibytes
-ram_size="$(free --mebi | awk '/Mem:/ {print $2}')"
-dd if=/dev/zero of="${swap_file}" bs=1M count="${ram_size}"
-# Change swap permissions default 0755 is insecure
-chmod 0600 "${swap_file}"
-mkswap "${swap_file}"
-swapon "${swap_file}"
-
-# Install base system
-if [ "${os}" = arch ]; then
-	pacstrap "${mnt_dir}" linux linux-firmware base base-devel grub \
-		vi networkmanager man-db man-pages openssh iptables git
-	if [ "${efi}" -eq 1 ]; then
-		pacstrap "${mnt_dir}" efibootmgr
-	fi
-elif [ "${os}" = artix ]; then
-	case "${init}" in
-		openrc)
-			basestrap "${mnt_dir}" openrc elogind-openrc \
-				networkmanager-openrc iptables-openrc openssh-openrc
-			;;
-		runit)
-			basestrap "${mnt_dir}" runit elogind-runit \
-				networkmanager-runit iptables-runit openssh-runit
-			;;
-		s6)
-			basestrap "${mnt_dir}" s6-base elogind-s6 \
-				networkmanager-s6 iptables-s6 openssh-s6
-			;;
-		suite66)
-			basestrap "${mnt_dir}" suite66-base elogind-suite66 \
-				networkmanager-suite66 openssh-suite66
-			;;
-	esac
-	if [ "${efi}" -eq 1 ]; then
-		basestrap "${mnt_dir}" efibootmgr
-	fi
-	basestrap "${mnt_dir}" base grub doas vi man-db man-pages git
-	if [ "${su_cmd}" != sudo ]; then
-		# Use pacman so we can exclude sudo but get the rest of base-devel
-		pacman -S --groups --quiet base-devel | grep -Fvx sudo |
-			pacman -S --noconfirm --needed --root "${mnt_dir}" -
+	if [ "${os}" = arch ]; then
+		su_cmd="sudo"
+		chroot_cmd="arch-chroot"
+	elif [ "${os}" = artix ]; then
+		su_cmd="doas"
+		chroot_cmd="artix-chroot"
 	else
-		basestrap "${mnt_dir}" base-devel
+		printf "Unknown os: '%s'\n" "${os}" 1>&2
+		exit 1
 	fi
-	# Need sed for mkinitcpio hook script but since we do not install base-devel
-	# group at the same time as linux there is no sed for when the script runs
-	# so it fails. Work around is to install linux after sed/base-devel
-	# mkinitcpio script: /usr/share/libalpm/scripts/mkinitcpio-install
-	basestrap "${mnt_dir}" linux linux-firmware
-fi
 
-if [ "${enable_lib32_repos}" -eq 1 ]; then
-	case "${os}" in
-		arch)
-			cat <<EOF | tee -a "${mnt_dir}/etc/pacman.conf"
+	# Print os and init information for logging and user interaction
+	printf "Detected operarting system is: '%s'\n" "${os}"
+	printf "Detected init system is: '%s'\n" "${init}"
+	if [ "${debug}" -ne 1 ] && [ "${os}" = artix ]; then
+		printf "Select init system. Default option is detected init system.\n"
+		ask "${init}" openrc runit s6 suite66
+		init="${response}"
+		response=
+	fi
+}
 
-# Enabled by ${prog}
-[multilib]
-Include = /etc/pacman.d/mirrorlist
-EOF
-			;;
-		artix)
-			cat <<EOF | tee -a "${mnt_dir}/etc/pacman.conf"
+prompt_user() {
+	enable_lib32_repos=0
+	artix_enable_arch_repos=0
 
-# Enabled by ${prog}
-[lib32]
-Include = /etc/pacman.d/mirrorlist
-EOF
-			;;
+	if [ "${debug}" -eq 1 ]; then
+		# Preset variables for testing
+		hostname="IUseArchBTW"
+		username="test"
+		password="test"
+		disk="/dev/sda"
+	else
+		printf "Enter Hostname (Name of the Computer): "
+		read -r hostname
+		printf "Enter Username: "
+		read -r username
+		lsblk
+		printf "Enter Disk (Example: /dev/sda): "
+		read -r disk
+		yes_no "Enable 32-bit Repositories?" "no" &&
+			enable_lib32_repos=1
+		if [ "${os}" = artix ]; then
+			yes_no "Enable Arch Linux Repositories?" "no" &&
+				artix_enable_arch_repos=1
+		fi
+	fi
+}
+
+setup() {
+	# Redirect output to log files
+	exec 1> >(tee "out.log")
+	exec 2> >(tee "err.log")
+	if [ "${os}" = arch ]; then
+		timedatectl set-ntp true
+	fi
+
+	# Update package database
+	pacman -Syy --noconfirm
+
+	# Artix does not come with parted on it's base iso so we have to install it
+	# Artix does come with parted on their DE isos (at least with xfce)
+	# So check and if it's not available install it
+	if ! command_exists "parted"; then
+		pacman -S parted --noconfirm
+	fi
+}
+
+partition_drive() {
+	# Turn off old swap
+	# Artix throws an error that target disk is in use if there is a swap partition
+	# on the said target disk. Arch will not though? idk
+	# Find the swap partition and turn it off
+	# This will turn off the first active swap partition it finds which may not be
+	# the right one but not many people will have multiple disks in their machines
+	# that have active swap partitions on them and who is using my script anyway?
+	# Wish there was a better way though
+	if [ "${os}" = artix ]; then
+		old_swap="$(swapon --show | awk 'FNR==2{print $1}')"
+		if [ -n "${old_swap}" ]; then
+			swapoff "${old_swap}"
+		fi
+	fi
+
+	# Partitioning (It's annoying)
+	boot_start_num=1
+	boot_start="${boot_start_num}MiB"
+	if [ "${efi}" -eq 1 ]; then
+		boot_end_num=$(( ${boot_start_num} + 550 ))
+	else
+		boot_end_num=$(( ${boot_start_num} + 100 ))
+	fi
+	boot_end="${boot_end_num}MiB"
+
+	boot_part_num=1
+	root_part_num=2
+
+	boot_part="${disk}"
+	root_part="${disk}"
+	# nvme drives have a "p" in front of the partition number
+	# https://unix.stackexchange.com/questions/452120/persistent-device-naming-for-nvme-storage-devices
+	# The NVMe naming standard describes:
+	# nvme0: first registered device's device controller
+	# nvme0n1: first registered device's first namespace
+	# nvme0n1p1: first registered device's first namespace's first partition
+	if [ "${disk%[0-9]n[0-9]}" = "/dev/nvme" ]; then
+		boot_part="${boot_part}p"
+		root_part="${root_part}p"
+	fi
+	boot_part="${boot_part}${boot_part_num}"
+	root_part="${root_part}${root_part_num}"
+	swap_file="${mnt_dir}/swapfile"
+
+	if [ "${efi}" -eq 1 ]; then
+		parted --script "${disk}" -- mklabel gpt \
+			mkpart BOOTPART fat32 "${boot_start}" "${boot_end}" \
+			mkpart ROOTPART ext4 "${boot_end}" 100% \
+			set "${boot_part_num}" esp on || exit 1
+	else
+		parted --script "${disk}" -- mklabel msdos \
+			mkpart primary ext4 "${boot_start}" "${boot_end}" \
+			mkpart primary ext4 "${boot_end}" 100% \
+			set "${boot_part_num}" boot on || exit 1
+	fi
+
+	# Make filesystems
+	mkfs.ext4 -L ROOT "${root_part}"
+
+	if [ "${efi}" -eq 1 ]; then
+		mkfs.fat -F 32 "${boot_part}"
+		fatlabel "${boot_part}" BOOT
+	else
+		mkfs.ext4 -L BOOT "${boot_part}"
+	fi
+
+	# Mount partitions
+	# /dev/disk/by-label sometimes works and sometimes doesn't so just use the
+	# partition variables I already have instead
+	mount "${root_part}" "${mnt_dir}"
+	mkdir -p "${boot_dir}"
+	mount "${boot_part}" "${boot_dir}"
+	# Make swap file
+	# Get size of ram in mebibytes
+	ram_size="$(free --mebi | awk '/Mem:/ {print $2}')"
+	dd if=/dev/zero of="${swap_file}" bs=1M count="${ram_size}"
+	# Change swap permissions default 0755 is insecure
+	chmod 0600 "${swap_file}"
+	mkswap "${swap_file}"
+	swapon "${swap_file}"
+}
+
+install_base_system() {
+	if [ "${os}" = arch ]; then
+		pacstrap "${mnt_dir}" linux linux-firmware base base-devel grub \
+			vi networkmanager man-db man-pages openssh iptables git
+		if [ "${efi}" -eq 1 ]; then
+			pacstrap "${mnt_dir}" efibootmgr
+		fi
+	elif [ "${os}" = artix ]; then
+		basestrap "${mnt_dir}" linux linux-firmware "${init}" elogind-"${init}" \
+			networkmanager-"${init}" iptables-"${init}" openssh-"${init}" \
+			base grub vi man-db man-pages git
+		if [ "${su_cmd}" != sudo ]; then
+			basestrap "${mnt_dir}" "${su_cmd}"
+			# Use pacman so we can exclude sudo but get the rest of base-devel
+			pacman -S --groups --quiet base-devel | grep -Fvx sudo |
+				pacman -S --noconfirm --needed --root "${mnt_dir}" -
+		else
+			basestrap "${mnt_dir}" base-devel
+		fi
+		if [ "${efi}" -eq 1 ]; then
+			basestrap "${mnt_dir}" efibootmgr
+		fi
+		# Need sed for mkinitcpio hook script but since we do not install
+		# base-devel group at the same time as linux there is no sed for when
+		# the script runs so it fails. Work around is to install linux after sed.
+		# mkinitcpio script: /usr/share/libalpm/scripts/mkinitcpio-install
+		# basestrap "${mnt_dir}" linux linux-firmware
+	fi
+}
+
+generate_fstab() {
+	fstab_file="${mnt_dir}/etc/fstab"
+	# Generate fstab
+	case "$os" in
+		arch) genfstab -U "${mnt_dir}" | tee "${fstab_file}";;
+		artix) fstabgen -U "${mnt_dir}" | tee "${fstab_file}";;
 	esac
-fi
+	# swapfile appears to be added automatically to fstab
+	# printf "${swap_file#${mnt_dir}} none swap defaults 0 0\n" | tee -a "${fstab_file}"
+}
 
-# Enable arch linux repositories is artix linux
-if [ "${artix_enable_arch_repos}" -eq 1 ]; then
-	basestrap "${mnt_dir}" artix-archlinux-support
-cat <<EOF | tee -a "${mnt_dir}/etc/pacman.conf"
-
-# Enabled by ${prog}
-# Arch Linux Repositories
-#[testing]
-#Include = /etc/pacman.d/mirrorlist-arch
-
-[extra]
-Include = /etc/pacman.d/mirrorlist-arch
-
-#[community-testing]
-#Include = /etc/pacman.d/mirrorlist-arch
-
-[community]
-Include = /etc/pacman.d/mirrorlist-arch
-
-#[multilib-testing]
-#Include = /etc/pacman.d/mirrorlist-arch
-
-#[multilib]
-#Include = /etc/pacman.d/mirrorlist-arch
-EOF
-	eval "${chroot_cmd}" "${mnt_dir}" pacman-key --populate archlinux
-fi
-
-# Generate fstab
-case "$os" in
-	arch) genfstab -U "${mnt_dir}" | tee "${mnt_dir}/etc/fstab";;
-	artix) fstabgen -U "${mnt_dir}" | tee "${mnt_dir}/etc/fstab";;
-esac
-# Add swapfile to fstab
-printf "${swap_file#${mnt_dir}} none swap defaults 0 0\n" | tee -a "${mnt_dir}/etc/fstab"
-
-# Setup hostname
-printf "%s\n" "${hostname}" | tee "${mnt_dir}/etc/hostname"
-if [ "${init}" = openrc ]; then
-	printf "hostname='%s'\n" "${hostname}" | tee "${mnt_dir}/etc/conf.d/hostname"
-fi
-cat <<EOF | tee "${mnt_dir}/etc/hosts"
+setup_hostname() {
+	printf "%s\n" "${hostname}" | tee "${mnt_dir}/etc/hostname"
+	if [ "${init}" = openrc ]; then
+		printf "hostname='%s'\n" "${hostname}" | tee "${mnt_dir}/etc/conf.d/hostname"
+	fi
+	cat <<EOF | tee "${mnt_dir}/etc/hosts"
 127.0.0.1 localhost
 ::1       localhost
 127.0.1.1 ${hostname}.localdomain ${hostname}
 EOF
+}
 
-# Set time zone
-eval "${chroot_cmd}" "${mnt_dir}" ln -sf /usr/share/zoneinfo/"${timezone}" /etc/localtime
-# Run hwclock to generate /etc/adjtime
-eval "${chroot_cmd}" "${mnt_dir}" hwclock --systohc
+locale_and_time() {
+	# Set time zone
+	eval "${chroot_cmd}" "${mnt_dir}" ln -sf /usr/share/zoneinfo/"${timezone}" /etc/localtime
+	# Run hwclock to generate /etc/adjtime
+	eval "${chroot_cmd}" "${mnt_dir}" hwclock --systohc
 
-# Locale and Keyboard
-printf "%s UTF-8\n" "${language}" | tee "${mnt_dir}/etc/locale.gen"
-eval "${chroot_cmd}" "${mnt_dir}" locale-gen
-cat <<EOF | tee "${mnt_dir}/etc/locale.conf"
+	# Locale and Keyboard
+	printf "%s UTF-8\n" "${language}" | tee "${mnt_dir}/etc/locale.gen"
+	eval "${chroot_cmd}" "${mnt_dir}" locale-gen
+	cat <<EOF | tee "${mnt_dir}/etc/locale.conf"
 export LANG="${language}"
 export LC_COLLATE="C"
 EOF
-printf "KEYMAP=us\n" | tee "${mnt_dir}/etc/vconsole.conf"
-if [ "${os}" = artix ]; then
-	printf "KEYMAP=us\n" | tee "${mnt_dir}/etc/conf.d/keymaps"
-fi
+	printf "KEYMAP=us\n" | tee "${mnt_dir}/etc/vconsole.conf"
+	if [ "${init}" = openrc ]; then
+		printf "KEYMAP=us\n" | tee "${mnt_dir}/etc/conf.d/keymaps"
+	fi
+}
 
-iptables_dir="${mnt_dir}/etc/iptables"
-iptables_file="${iptables_dir}/iptables.rules"
-ip6tables_file="${iptables_dir}/ip6tables.rules"
+install_grub() {
+	if [ "${efi}" -eq 1 ]; then
+		eval "${chroot_cmd}" "${mnt_dir}" grub-install --target=x86_64-efi \
+			--efi-directory="${boot_dir#${mnt_dir}}" --bootloader-id=grub
+	else
+		# eval "${chroot_cmd}" "${mnt_dir}" grub-install \
+		# 	--boot-directory="${boot_dir#${mnt_dir}}" "${disk}"
+		eval "${chroot_cmd}" "${mnt_dir}" grub-install "${disk}"
+	fi
+	eval "${chroot_cmd}" "${mnt_dir}" grub-mkconfig \
+		-o "${boot_dir#${mnt_dir}}/grub/grub.cfg"
+}
 
-# iptables Firewall
-cat <<EOF | tee "${iptables_file}"
+setup_iptables() {
+	iptables_dir="${mnt_dir}/etc/iptables"
+	iptables_file="${iptables_dir}/iptables.rules"
+	ip6tables_file="${iptables_dir}/ip6tables.rules"
+
+	# iptables Firewall
+	cat <<EOF | tee "${iptables_file}"
 # Generated by ${prog}
 # iptables base configuration
 # Allow outgoing connections and deny all incoming connections
@@ -431,7 +388,7 @@ cat <<EOF | tee "${iptables_file}"
 COMMIT
 EOF
 
-cat <<EOF | tee "${ip6tables_file}"
+	cat <<EOF | tee "${ip6tables_file}"
 # Generated by ${prog}
 # ip6tables base configuration
 # Deny everything
@@ -468,117 +425,181 @@ COMMIT
 COMMIT
 EOF
 
-# Load iptables rules
-iptables-restore < "${iptables_file}" ||
-	printf "ERROR: iptables not restored\n" 1>&2
-ip6tables-restore < "${ip6tables_file}" ||
-	printf "ERROR: ip6tables not restored\n" 1>&2
+	# Load iptables rules
+	iptables-restore < "${iptables_file}" ||
+		printf "ERROR: iptables not restored\n" 1>&2
+	ip6tables-restore < "${ip6tables_file}" ||
+		printf "ERROR: ip6tables not restored\n" 1>&2
 
-# Enable services on boot
-case "${init}" in
-	systemd)
-		arch-chroot "${mnt_dir}" systemctl enable iptables
-		arch-chroot "${mnt_dir}" systemctl enable ip6tables
-		arch-chroot "${mnt_dir}" systemctl enable NetworkManager
-		;;
-	openrc)
-		# https://serverfault.com/questions/1059232/what-runlevel-should-ufw-firewall-start-at-in-alpine-linux
-		# Networking starts at boot run level so maybe use boot run level instead?
-		eval "${chroot_cmd}" "${mnt_dir}" rc-update add iptables default
-		eval "${chroot_cmd}" "${mnt_dir}" rc-update add ip6tables default
-		eval "${chroot_cmd}" "${mnt_dir}" rc-update add NetworkManager default
-		;;
-	runit)
-		eval "${chroot_cmd}" "${mnt_dir}" \
-			ln -s /etc/runit/sv/iptables /etc/runit/runsvdir/default
-		eval "${chroot_cmd}" "${mnt_dir}" \
-			ln -s /etc/runit/sv/ip6tables /etc/runit/runsvdir/default
-		eval "${chroot_cmd}" "${mnt_dir}" \
-			ln -s /etc/runit/sv/NetworkManager /etc/runit/runsvdir/default
-		;;
-	s6)
-		touch "${mnt_dir}/etc/s6/adminsv/default/contents.d/iptables"
-		touch "${mnt_dir}/etc/s6/adminsv/default/contents.d/ip6tables"
-		touch "${mnt_dir}/etc/s6/adminsv/default/contents.d/NetworkManager"
-		eval "${chroot_cmd}" "${mnt_dir}" s6-db-reload
-		;;
-	suite66)
-		# No longer need to create boot and default trees
-		# suite66 needs some special setup
-		# eval "${chroot_cmd}" "${mnt_dir}" 66-tree -n boot
-		# eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t boot boot@system
-		# # Need to create default tree first
-		# eval "${chroot_cmd}" "${mnt_dir}" 66-tree -ncE default
-		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default iptables
-		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default ip6tables
-		eval "${chroot_cmd}" "${mnt_dir}" 66-enable -t default NetworkManager
-		;;
-esac
+	# Have to add iptables as a module otherwise we get error when shutting down
+	# or rebooting saying: your kernel lacks iptables support please load
+	# appropriate kernel modules and try agian ERROR: iptables failed to stop
+	# So we tell the kernel to load iptables module
+	# https://forums.funtoo.org/topic/884-about-ip6tables/
+	# https://forum.artixlinux.org/index.php/topic,2035.0.html
+	if [ "${init}" = openrc ]; then
+		# Tell the kernel to load the ip_tables and ip6_tables modules at boot
+		# systemd handles this a different way and it seems the arch kernel is
+		# setup to load ip_tables by default but not artix
+		printf 'modules="ip_tables ip6_tables"\n' |
+			tee -a "${mnt_dir}/etc/conf.d/modules"
+		# Save the iptables rules
+		eval "${chroot_cmd}" "${mnt_dir}" /etc/init.d/iptables save
+		eval "${chroot_cmd}" "${mnt_dir}" /etc/init.d/ip6tables save
+	fi
+}
 
-# Have to add iptables as a module otherwise we get error when shutting down or
-# rebooting saying: your kernel lacks iptables support please load appropriate
-# kernel modules and try agian ERROR: iptables failed to stop
-# So we tell the kernel to load iptables module
-# https://forums.funtoo.org/topic/884-about-ip6tables/
-# https://forum.artixlinux.org/index.php/topic,2035.0.html
-if [ "${init}" = openrc ]; then
-	# Tell the kernel to load the ip_tables and ip6_tables modules at boot
-	# systemd handles this a different way and it seems the arch kernel is setup
-	# to load ip_tables by default but not artix
-	printf 'modules="ip_tables ip6_tables"\n' |
-		tee -a "${mnt_dir}/etc/conf.d/modules"
-	# Save the iptables rules
-	eval "${chroot_cmd}" "${mnt_dir}" /etc/init.d/iptables save
-	eval "${chroot_cmd}" "${mnt_dir}" /etc/init.d/ip6tables save
-fi
+enable_services() {
+	# Enable services on boot
+	case "${init}" in
+		systemd)
+			arch-chroot "${mnt_dir}" systemctl enable iptables
+			arch-chroot "${mnt_dir}" systemctl enable ip6tables
+			arch-chroot "${mnt_dir}" systemctl enable NetworkManager
+			;;
+		openrc)
+			# https://serverfault.com/questions/1059232/what-runlevel-should-ufw-firewall-start-at-in-alpine-linux
+			# Networking starts at boot run level so maybe use boot run level instead?
+			eval "${chroot_cmd}" "${mnt_dir}" rc-update add iptables default
+			eval "${chroot_cmd}" "${mnt_dir}" rc-update add ip6tables default
+			eval "${chroot_cmd}" "${mnt_dir}" rc-update add NetworkManager default
+			;;
+		runit)
+			eval "${chroot_cmd}" "${mnt_dir}" \
+				ln -s /etc/runit/sv/iptables /etc/runit/runsvdir/default
+			eval "${chroot_cmd}" "${mnt_dir}" \
+				ln -s /etc/runit/sv/ip6tables /etc/runit/runsvdir/default
+			eval "${chroot_cmd}" "${mnt_dir}" \
+				ln -s /etc/runit/sv/NetworkManager /etc/runit/runsvdir/default
+			;;
+		s6)
+			touch "${mnt_dir}/etc/s6/adminsv/default/contents.d/iptables"
+			touch "${mnt_dir}/etc/s6/adminsv/default/contents.d/ip6tables"
+			touch "${mnt_dir}/etc/s6/adminsv/default/contents.d/NetworkManager"
+			eval "${chroot_cmd}" "${mnt_dir}" s6-db-reload
+			;;
+	esac
+}
 
-if [ "${efi}" -eq 1 ]; then
-	eval "${chroot_cmd}" "${mnt_dir}" grub-install --target=x86_64-efi \
-		--efi-directory="${boot_dir#${mnt_dir}}" --bootloader-id=grub
-else
-	# eval "${chroot_cmd}" "${mnt_dir}" grub-install \
-	# 	--boot-directory="${boot_dir#${mnt_dir}}" "${disk}"
-	eval "${chroot_cmd}" "${mnt_dir}" grub-install "${disk}"
-fi
-eval "${chroot_cmd}" "${mnt_dir}" grub-mkconfig \
-	-o "${boot_dir#${mnt_dir}}/grub/grub.cfg"
+add_user() {
+	# kvm needed for QEMU with kvm
+	# sys group is needed for printing with cups
+	# And every other group I can imagine you will need
+	eval "${chroot_cmd}" "${mnt_dir}" useradd -m \
+		-G wheel,kvm,sys,video,audio,disk,storage,floppy,power,input,optical,scanner \
+		"${username}"
+	# The -R option does not seem to work with chpasswd and $mnt_dir
+	# Use $chroot_cmd with $mnt_dir instead
+	printf "${username}:${password}" | eval "${chroot_cmd}" "${mnt_dir}" chpasswd
 
-# Add user
-# kvm needed for QEMU with kvm
-# sys group is needed for printing with cups
-eval "${chroot_cmd}" "${mnt_dir}" useradd --create-home --user-group \
-	--groups wheel,kvm,sys \
-	"${username}"
-printf "%s:%s" "${username}" "${password}" | chpasswd --root "${mnt_dir}"
+	case "${su_cmd}" in
+		sudo)
+			printf "\n%s ALL=(ALL) ALL\n" "${username}" |
+				tee -a "${mnt_dir}/etc/sudoers"
+			;;
+		doas)
+			printf "permit persist keepenv %s\n" "${username}" |
+				tee "${mnt_dir}/etc/doas.conf"
+			;;
+		*)
+			printf "ERROR: Unsupported or null su_cmd '%s'\n" "${su_cmd}" 1>&2
+			;;
+	esac
+}
 
-case "${su_cmd}" in
-	sudo)
-		printf "\n%s ALL=(ALL) ALL\n" "${username}" |
-			tee -a "${mnt_dir}/etc/sudoers"
-		;;
-	doas)
-		printf "permit persist keepenv %s\n" "${username}" |
-			tee "${mnt_dir}/etc/doas.conf"
-		;;
-	*)
-		printf "ERROR: Unsupported or null su_cmd '%s'\n" "${su_cmd}" 1>&2
-		;;
-esac
+disable_root() {
+	# Cannot use the -R option with usermod
+	eval "${chroot_cmd}" "${mnt_dir}" usermod --lock root ||
+		printf "ERROR: could not lock root user\n" 1>&2
+	eval "${chroot_cmd}" "${mnt_dir}" usermod --expiredate 1 root ||
+		printf "ERROR: could not set root user expiredate\n" 1>&2
 
-# Disable root user
-usermod --root "${mnt_dir}" --lock root ||
-	printf "ERROR: could not lock root user\n" 1>&2
-usermod --root "${mnt_dir}" --expiredate 1 root ||
-	printf "ERROR: could not set root user expiredate\n" 1>&2
-# Disable ssh with root user
-printf "\nPermitRootLogin no\n" | tee -a "${mnt_dir}/etc/ssh/sshd_config" ||
-	printf "ERROR: could not disable ssh login with root user\n" 1>&2
+	# Disable ssh with root user
+	sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/g" \
+		"${mnt_dir}/etc/ssh/sshd_config" ||
+		printf "ERROR: could not disable ssh login with root user\n" 1>&2
+}
 
-if [ "${debug}" -ne 1 ]; then
-	umount -R "${mnt_dir}" ||
-		printf "ERROR: umount error with '%s'\n" "${mnt_dir}" 1>&2
-else
-	set +x
-fi
+enable_repos() {
+	if [ "${enable_lib32_repos}" -eq 1 ]; then
+		case "${os}" in
+			arch)
+				cat <<EOF | tee -a "${mnt_dir}/etc/pacman.conf"
 
-printf "All Done Hopefully It Works\n"
+# Enabled by ${prog}
+[multilib]
+Include = /etc/pacman.d/mirrorlist
+EOF
+				;;
+			artix)
+				cat <<EOF | tee -a "${mnt_dir}/etc/pacman.conf"
+
+# Enabled by ${prog}
+[lib32]
+Include = /etc/pacman.d/mirrorlist
+EOF
+				;;
+		esac
+	fi
+
+	# Enable arch linux repositories in artix linux
+	if [ "${artix_enable_arch_repos}" -eq 1 ]; then
+		basestrap "${mnt_dir}" artix-archlinux-support
+	cat <<EOF | tee -a "${mnt_dir}/etc/pacman.conf"
+
+# Enabled by ${prog}
+# Arch Linux Repositories
+#[testing]
+#Include = /etc/pacman.d/mirrorlist-arch
+
+[extra]
+Include = /etc/pacman.d/mirrorlist-arch
+
+#[community-testing]
+#Include = /etc/pacman.d/mirrorlist-arch
+
+[community]
+Include = /etc/pacman.d/mirrorlist-arch
+
+#[multilib-testing]
+#Include = /etc/pacman.d/mirrorlist-arch
+
+#[multilib]
+#Include = /etc/pacman.d/mirrorlist-arch
+EOF
+		eval "${chroot_cmd}" "${mnt_dir}" pacman-key --populate archlinux
+	fi
+}
+
+main() {
+	detect_os_and_init
+
+	prompt_user
+	setup
+
+	partition_drive
+
+	install_base_system
+
+	generate_fstab
+
+	setup_hostname
+	locale_and_time
+
+	install_grub
+
+	setup_iptables
+	enable_services
+
+	add_user
+	disable_root
+
+	enable_repos
+
+	[ "${debug}" -eq 1 ] && set +x
+
+	printf "All Done Hopefully It Works\n"
+	exit 0
+}
+
+main
