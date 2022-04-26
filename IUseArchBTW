@@ -166,9 +166,13 @@ prompt_user() {
 		read -r hostname
 		printf "Enter Username: "
 		read -r username
+		get_password
+		password="${password_input}"
+
 		lsblk
 		printf "Enter Disk (Example: /dev/sda): "
 		read -r disk
+
 		yes_no "Enable 32-bit Repositories?" "no" &&
 			enable_lib32_repos=1
 		if [ "${os}" = artix ]; then
