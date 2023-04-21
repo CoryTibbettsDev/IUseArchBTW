@@ -223,7 +223,9 @@ partition_drive() {
 	if [ "${efi}" -eq 1 ]; then
 		boot_end_num=$(( ${boot_start_num} + 550 ))
 	else
-		boot_end_num=$(( ${boot_start_num} + 100 ))
+		# Previously used 100MiB which was too small
+		# 98MB boot used on artix in testing
+		boot_end_num=$(( ${boot_start_num} + 150 ))
 	fi
 	boot_end="${boot_end_num}MiB"
 
@@ -333,7 +335,6 @@ setup_hostname() {
 	cat <<EOF | tee "${mnt_dir}/etc/hosts"
 127.0.0.1 localhost
 ::1       localhost
-127.0.1.1 ${hostname}.localdomain ${hostname}
 EOF
 }
 
