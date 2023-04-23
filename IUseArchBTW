@@ -64,11 +64,11 @@ yes_no() {
 }
 
 get_password() {
-	printf "Enter Password: "
+	printf "Enter ${1} Password: "
 	stty -echo
 	read -r password_input
 	stty echo
-	printf "\nEnter Password Again: "
+	printf "\nEnter ${1} Password Again: "
 	stty -echo
 	read -r password_input_again
 	stty echo
@@ -78,7 +78,7 @@ get_password() {
 		return 0
 	else
 		printf "Passwords do not match please try again.\n"
-		get_password
+		get_password "${1}"
 	fi
 }
 
@@ -154,20 +154,30 @@ detect_os_and_init() {
 prompt_user() {
 	enable_lib32_repos=0
 	artix_enable_arch_repos=0
+	encrypt=0
 
 	if [ "${debug}" -eq 1 ]; then
 		# Preset variables for testing
 		hostname="IUseArchBTW"
 		username="test"
 		password="test"
+		encrypt=1
+		encrypt_password="test"
 		disk="/dev/sda"
 	else
 		printf "Enter Hostname (Name of the Computer): "
 		read -r hostname
 		printf "Enter Username: "
 		read -r username
-		get_password
+		get_password "for ${username}"
 		password="${password_input}"
+
+		yes_no "Encrypt the disk?" "no" && encrypt=1
+
+		if [ "${encrypt}" -eq 1 ]; then
+			get_password "for encryption"
+			encrypt_password="${password_input}"
+		fi
 
 		lsblk
 		printf "Enter Disk (Example: /dev/sda): "
@@ -259,8 +269,31 @@ partition_drive() {
 			mkpart primary ext4 "${boot_end}" 100% \
 			set "${boot_part_num}" boot on || exit 1
 	fi
+}
 
-	# Make filesystems
+# Arg 1 partition to encrypt
+# Arg 2 password for encryption
+# https://serverfault.com/questions/513605/how-to-non-interactively-supply-a-passphrase-to-dmcrypt-luksformat
+encrypt_partition() {
+	lvm_id="cryptlvm"
+	printf "%s" "${2}" | cryptsetup --verbose luksFormat "${1}" -
+	printf "%s" "${2}" | cryptsetup luksOpen "${1}" "${lvm_id}" -
+	mapper_dir="/dev/mapper/${lvm_id}"
+	# Create physical system
+	pvcreate "${mapper_dir}"
+	# Create a logical volume group
+	lv_group="lvmgroup"
+	vgcreate "${lv_group}" "${mapper_dir}"
+
+	lv_root_name="root"
+	# Create logical volumes
+	lvcreate --extents +100%FREE "${lv_group}" --name "${lv_root_name}"
+
+	root_uuid="$(blkid -s UUID -o value "${root_part}")"
+	root_part="/dev/${lv_group}/${lv_root_name}"
+}
+
+make_filesystems() {
 	mkfs.ext4 -L ROOT "${root_part}"
 
 	if [ "${efi}" -eq 1 ]; then
@@ -307,6 +340,9 @@ install_base_system() {
 		fi
 		if [ "${efi}" -eq 1 ]; then
 			basestrap "${mnt_dir}" efibootmgr
+		fi
+		if [ "${encrypt}" -eq 1 ]; then
+			basestrap "${mnt_dir}" device-mapper-"${init}" lvm2-"${init}" cryptsetup-"${init}"
 		fi
 		# Need sed for mkinitcpio hook script but since we do not install
 		# base-devel group at the same time as linux there is no sed for when
@@ -355,6 +391,21 @@ EOF
 	if [ "${init}" = openrc ]; then
 		printf "KEYMAP=us\n" | tee "${mnt_dir}/etc/conf.d/keymaps"
 	fi
+}
+
+# Must be done after grub package is installed
+encrypt_edit_grub() {
+	# Need to use double quotes so variables are expanded in string
+	# TODO: Swapfile hibernation see link below
+	# https://wiki.archlinux.org/title/Power_management/Suspend_and_hibernate#Hibernation_into_swap_file
+
+	# Have to use , as delimeter because we are using / within the replacing
+	# string because of a file path
+	sed -i "s,GRUB_CMDLINE_LINUX_DEFAULT=.*,GRUB_CMDLINE_LINUX_DEFAULT=\"cryptdevice=UUID=${root_uuid}:${lvm_id} root=${root_part}\"," \
+		"${mnt_dir}/etc/default/grub"
+
+	sed -i 's/#GRUB_ENABLE_CRYPTODISK="y"/GRUB_ENABLE_CRYPTODISK="y"/' \
+		"${mnt_dir}/etc/default/grub"
 }
 
 install_grub() {
@@ -468,6 +519,11 @@ enable_services() {
 			eval "${chroot_cmd}" "${mnt_dir}" rc-update add iptables default
 			eval "${chroot_cmd}" "${mnt_dir}" rc-update add ip6tables default
 			eval "${chroot_cmd}" "${mnt_dir}" rc-update add NetworkManager default
+			if test "${encrypt}" -eq 1; then
+				eval "${chroot_cmd}" "${mnt_dir}" rc-update add device-mapper boot
+				eval "${chroot_cmd}" "${mnt_dir}" rc-update add lvm boot
+				eval "${chroot_cmd}" "${mnt_dir}" rc-update add dmcrypt boot
+			fi
 			;;
 		runit)
 			eval "${chroot_cmd}" "${mnt_dir}" \
@@ -576,6 +632,14 @@ EOF
 	fi
 }
 
+encrypt_edit_mkinitcpio() {
+	# Add encrypt lvm2 Hooks
+	sed -i 's/^HOOKS=.*/HOOKS=(base udev autodetect modconf kms keyboard keymap consolefont block encrypt lvm2 filesystems fsck)/' \
+		"${mnt_dir}/etc/mkinitcpio.conf"
+
+	eval "${chroot_cmd}" "${mnt_dir}" mkinitcpio -P
+}
+
 main() {
 	detect_os_and_init
 
@@ -583,6 +647,10 @@ main() {
 	setup
 
 	partition_drive
+	if test "${encrypt}" -eq 1; then
+		encrypt_partition "${root_part}" "${encrypt_password}"
+	fi
+	make_filesystems
 
 	install_base_system
 
@@ -591,6 +659,9 @@ main() {
 	setup_hostname
 	locale_and_time
 
+	if test "${encrypt}" -eq 1; then
+		encrypt_edit_grub
+	fi
 	install_grub
 
 	setup_iptables
@@ -600,6 +671,10 @@ main() {
 	disable_root
 
 	enable_repos
+
+	if test "${encrypt}" -eq 1; then
+		encrypt_edit_mkinitcpio
+	fi
 
 	[ "${debug}" -eq 1 ] && set +x
 
